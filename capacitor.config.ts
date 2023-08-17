@@ -5,7 +5,10 @@ const config: CapacitorConfig = {
   appName: 'mobile_canvas',
   webDir: 'out',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    url: "http://192.168.0.14:3000",
+    cleartext: true
+    
   }
 };
 
