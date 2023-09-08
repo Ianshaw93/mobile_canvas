@@ -6,9 +6,51 @@ import { Capacitor } from '@capacitor/core';
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 
 const CameraLogic= () => {
+  const [imageArray, setImageArray] = React.useState<any[]>([]);
   // how to have Platform check?
   // Capacitor.getPlatform()
   const isAvailable = Capacitor.isPluginAvailable('Camera');
+
+  async function loadFiles() {
+    setImageArray([])
+
+    Filesystem.readdir({
+      directory: Directory.Data,
+      path: IMAGE_DIR
+    }).then(result => {
+      console.log("result: ", result)
+      // @ts-ignore
+      loadFileData(result.files)
+      // setImageArray(result.files)
+    }).catch(err => {
+      console.log("err: ", err)
+      Filesystem.mkdir({ // removed await
+        directory: Directory.Data,
+        path: IMAGE_DIR        
+      })
+    })
+  } 
+
+  async function loadFileData(fileNames: any[]) {
+    console.log("fileNames: ", fileNames)
+    let temp = []
+    for (let f of fileNames) {
+      const filePath = `${IMAGE_DIR}/${f.name}`
+      const readFile = await Filesystem.readFile({
+        directory: Directory.Data,
+        path: filePath
+      })
+      console.log("readFile: ", readFile)
+      temp.push({
+        name: f.name,
+        path: filePath,
+        data: `data:image/jpeg;base64,${readFile.data}`,
+      })
+      
+    }
+    setImageArray(temp)
+  }
+
   const takePicture = async () => {
     const image = await Camera.getPhoto({
       quality: 90,
@@ -20,6 +62,7 @@ const CameraLogic= () => {
     var imageUrl = image.webPath;
     if (image) {
       saveImage(image);
+      
     }
     // Can be set to the src of an image now
     // imageElement.src = imageUrl;
@@ -36,7 +79,7 @@ const CameraLogic= () => {
         data: base64Data,
       })
       console.log("savedFile: ", savedFile)
-
+      loadFiles();
       async function readAsBase64(photo: Photo) {
         if (Capacitor.isNativePlatform()) {
           // do something
@@ -71,6 +114,13 @@ const CameraLogic= () => {
     <>
       <div>Camera</div>
       <button onClick={takePicture}>Take Picture</button>
+      {imageArray.map((image, index) => {
+        return (
+          <div key={index}>
+            <img src={image.data} alt={image.name} />
+          </div>
+        )
+      })}
     </>
   )
 }
