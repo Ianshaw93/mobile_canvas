@@ -21,6 +21,7 @@
     "eslint-config-next": "13.4.17",
     "next": "13.4.17",
     "pdfjs": "^2.5.2",
+    "pdfjs-dist": "^3.10.111",
     "postcss": "8.4.28",
     "react": "18.2.0",
     "react-dom": "18.2.0",
@@ -28,6 +29,7 @@
     "typescript": "5.1.6"
   },
   "devDependencies": {
-    "@capacitor/cli": "^5.2.3"
+    "@capacitor/cli": "^5.2.3",
+    "@types/pdfjs-dist": "^2.10.378"
   }
 }
