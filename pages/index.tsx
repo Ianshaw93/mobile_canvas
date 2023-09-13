@@ -14,7 +14,8 @@ export default function Home() {
 // TODO: use native camera
   return (
     <>
-      <CameraLogic />
+      {/* move cam to plan page */}
+      {/* <CameraLogic /> */}
       <PdfPicker />
     </>
   )
