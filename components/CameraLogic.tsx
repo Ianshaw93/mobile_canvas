@@ -112,11 +112,11 @@ const CameraLogic= () => {
 
   return (
     <>
-      {/* <div>Camera</div> */}
       <button onClick={takePicture}>Take Picture</button>
       {imageArray.map((image, index) => {
+        console.log("image: ", image, index)
         return (
-          <div key={index}>
+          <div key={index} className='max-w-sm max-h-sm'>
             <img src={image.data} alt={image.name} />
           </div>
         )
