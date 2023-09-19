@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import PinPopup from '@/components/PinPopup';
-import CameraLogic from '@/components/CameraLogic';
+import useSiteStore from '@/store/useSiteStore';
 
 type Point = {
   x: number;
@@ -11,6 +11,12 @@ type Point = {
 const PdfView = () => {
   let tool = 'point'
   const [points, setPoints] = useState<Point[]>([])
+  const [showPinPopup, setShowPinPopup] = useState<boolean>(false)
+
+
+  // @ts-ignore
+  const canvasDimensions = useSiteStore((state) => state.canvasDimensions)
+  console.log("canvasDimensions: ", canvasDimensions)
   // LATER allow editing of points
   // TODO: full size pdf here
   // allow drawing of pins
@@ -75,6 +81,7 @@ const PdfView = () => {
       let closestPoint = findClosestPin(pointer)
       if (closestPoint) {
         console.log("closest point", closestPoint)
+        setShowPinPopup(true)
         // action popup modal
         //   // if pointer is over/close to a pin
         //   // allow adding images to pin
@@ -91,28 +98,31 @@ const PdfView = () => {
         context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension) 
       }
     }
-    // if (tool === 'select') { 
-    // }
     
   
   }
-  let showPinPopup = true
+  // let showPinPopup = true
   return (
     <>
       <canvas
       ref={canvasRef}
-      // width={canvasDimensions.width}
-      // height={canvasDimensions.height}
+      width={canvasDimensions.width}
+      height={canvasDimensions.height}
       className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
       onPointerDown={handlePointerDown}
       // onPointerUp={handlePointerUp}      
       />
         
       <div className='z-0'>
-        <img src={dataUrl} alt="Full PDF" />
+        <img
+          src={dataUrl} 
+          alt="Full PDF" 
+          width={canvasDimensions.width}
+          height={canvasDimensions.height}
+        />
       </div>
       {/* <CameraLogic /> */}
-      {showPinPopup && <PinPopup />}
+      {showPinPopup && <PinPopup setShowPinPopup={setShowPinPopup}/>}
     </>
   );
 };

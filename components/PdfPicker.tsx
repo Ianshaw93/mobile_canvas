@@ -1,7 +1,19 @@
 import React from 'react'
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/router';
+import useSiteStore from '../store/useSiteStore'
 
+type Dimensions = {
+  width: number
+  height: number
+}
+
+type State = {
+  plans: Array<React.ReactNode>
+  canvasDimensions: Dimensions | {}
+  addPlan: (plan: React.ReactNode) => void
+  setCanvasDimensions: (dimensions: Dimensions) => void
+}
 // @ts-ignore
 const pdfjs = await import('pdfjs-dist/build/pdf');
 // @ts-ignore
@@ -17,7 +29,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const PdfPicker = () => {
     const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
     const [ previewImage, setPreviewImage ] = useState<boolean>();
-    const [ canvasDimensions, setCanvasDimensions ] = useState({})
+    // const [ canvasDimensions, setCanvasDimensions ] = useState({})
+    // @ts-ignore
+    const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions) 
     const [pdfs, setPdfs] = useState([]);
     const router = useRouter();
 
@@ -47,6 +61,7 @@ const PdfPicker = () => {
                 canvas.height = viewport.height;
                 // @ts-ignore
                 canvas.width = viewport.width;
+                console.log("viewport: ",viewport.width, viewport.height)
                 // @ts-ignore
                 setCanvasDimensions({width: canvas.width, height: canvas.height})
     

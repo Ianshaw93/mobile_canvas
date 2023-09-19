@@ -61,7 +61,11 @@ const CameraLogic= () => {
     console.log("imaage: ", image)
     var imageUrl = image.webPath;
     if (image) {
-      saveImage(image);
+      // saveImage(image);
+      // @ts-ignore
+      setImageArray((prevImages) => [...prevImages, image])
+        // @ts-ignore
+ 
       
     }
     // Can be set to the src of an image now
@@ -117,7 +121,8 @@ const CameraLogic= () => {
         console.log("image: ", image, index)
         return (
           <div key={index} className='max-w-sm max-h-sm'>
-            <img src={image.data} alt={image.name} />
+            {/* <img src={image.data} alt={image.name} /> */}
+            <img src={image.webPath} alt={image.name} />
           </div>
         )
       })}
