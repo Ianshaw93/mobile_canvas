@@ -111,8 +111,8 @@ const PdfView = () => {
       <div className='z-0'>
         <img src={dataUrl} alt="Full PDF" />
       </div>
-      <CameraLogic />
-      {/* {showPinPopup && <PinPopup />} */}
+      {/* <CameraLogic /> */}
+      {showPinPopup && <PinPopup />}
     </>
   );
 };
