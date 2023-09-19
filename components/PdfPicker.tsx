@@ -1,5 +1,6 @@
 import React from 'react'
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/router';
 
 // @ts-ignore
 const pdfjs = await import('pdfjs-dist/build/pdf');
@@ -12,11 +13,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 // allow multiple
 // show small versions in column
 // click on pdf, go to page with pdf in canvas
+// TODO: show small versions, but data reflects large version
 const PdfPicker = () => {
     const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
     const [ previewImage, setPreviewImage ] = useState<boolean>();
     const [ canvasDimensions, setCanvasDimensions ] = useState({})
     const [pdfs, setPdfs] = useState([]);
+    const router = useRouter();
+
     // @ts-ignore
     function handleFileChange(event) {
         const file = event.target.files[0]
@@ -35,7 +39,7 @@ const PdfPicker = () => {
             // @ts-ignore
             const context = canvas.getContext("2d")
     
-            const scale = 0.1 // was 1.5
+            const scale = 1.5 // was 1.5
             const viewport = page.getViewport({ scale: scale })
     
                 // Prepare canvas using PDF page dimensions
@@ -55,7 +59,6 @@ const PdfPicker = () => {
                 renderTask.promise.then(() => {
                 // @ts-ignore
                 setPdfs((prevPdfs) => [...prevPdfs, canvas.toDataURL()]);
-                console.log("canvas url: ", canvas?.toDataURL());
                 });
                 setPreviewImage(true)
             
@@ -63,6 +66,14 @@ const PdfPicker = () => {
       })
     }  
   }
+  // @ts-ignore
+  const viewPdf = (dataUrl) => {
+    router.push({
+      pathname: '/pdf-view',
+      query: { dataUrl },
+    });
+  };
+
   return (
     <>
         <div>
@@ -88,7 +99,8 @@ const PdfPicker = () => {
                 key={index}
                 src={pdf}
                 alt={`PDF ${index + 1}`}
-                // onClick={() => viewPdf(pdf)}
+                onClick={() => viewPdf(pdf)}
+                className='max-w-sm'
             />
             </>
         ))}
