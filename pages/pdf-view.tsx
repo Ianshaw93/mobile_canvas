@@ -16,6 +16,11 @@ const PdfView = () => {
 
   // @ts-ignore
   const canvasDimensions = useSiteStore((state) => state.canvasDimensions)
+    // @ts-ignore
+  const plans = useSiteStore((state) => state.plans)
+
+  // @ts-ignore
+  const pdfs = useSiteStore((state) => state.pdfs)
   console.log("canvasDimensions: ", canvasDimensions)
   // LATER allow editing of points
   // TODO: full size pdf here
@@ -23,10 +28,16 @@ const PdfView = () => {
   // select pin
   // add images to pin
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const pdfCanvasRef = React.useRef<HTMLCanvasElement>(null);
   const router = useRouter();
+  // let { dataUrl } = router.query as {dataUrl: string};
   let { dataUrl } = router.query as {dataUrl: string};
-  if (!dataUrl) {
-    dataUrl = ''
+  console.log("dataUrl: ", dataUrl)
+  const bgPdf = plans[dataUrl]
+
+  if (pdfCanvasRef && pdfCanvasRef.current && bgPdf) {
+
+    pdfCanvasRef.current = bgPdf.current
   }
 
   function calcDistance(p1: Point, p2: Point) {
@@ -95,7 +106,7 @@ const PdfView = () => {
 
         context.fillStyle = 'blue'
     
-        let dimension = 5
+        let dimension = 10
         let newP = pointer
         setPoints((prevPoints) => [...prevPoints, newP])
         context.fillRect(newP.x - dimension/2, newP.y - dimension/2, dimension, dimension) 
@@ -115,15 +126,20 @@ const PdfView = () => {
       onPointerDown={handlePointerDown}
       // onPointerUp={handlePointerUp}      
       />
-        
       <div className='z-0'>
-        <img
+        {/* <img
           src={dataUrl} 
           alt="Full PDF" 
           width={canvasDimensions.width}
           height={canvasDimensions.height}
+        />  */}
+        <canvas
+            ref={pdfCanvasRef}
+            width={canvasDimensions.width}
+            height={canvasDimensions.height}  
+            className='border border-black rounded-md bg-transparent inset-0 absolute z-0'
         />
-        
+
       </div>
       {/* <CameraLogic /> */}
       {showPinPopup && <PinPopup setShowPinPopup={setShowPinPopup}/>}

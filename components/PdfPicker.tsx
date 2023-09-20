@@ -32,6 +32,10 @@ const PdfPicker = () => {
     // const [ canvasDimensions, setCanvasDimensions ] = useState({})
     // @ts-ignore
     const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions) 
+        // @ts-ignore
+
+    const addPlan = useSiteStore((state) => state.addPlan)
+
     const [pdfs, setPdfs] = useState([]);
     const router = useRouter();
 
@@ -53,7 +57,7 @@ const PdfPicker = () => {
             // @ts-ignore
             const context = canvas.getContext("2d")
     
-            const scale = 1.5 // was 1.5
+            const scale = 0.5 // was 1.5
             const viewport = page.getViewport({ scale: scale })
     
                 // Prepare canvas using PDF page dimensions
@@ -73,8 +77,9 @@ const PdfPicker = () => {
                 var renderTask = page.render(renderContext);
                 renderTask.promise.then(() => {
                 // @ts-ignore
-                setPdfs((prevPdfs) => [...prevPdfs, canvas.toDataURL()]);
+                setPdfs((prevPdfs) => [...prevPdfs, [canvas, canvas?.toDataURL()]]);
                 });
+                addPlan(canvas)
                 setPreviewImage(true)
             
         })
@@ -112,10 +117,10 @@ const PdfPicker = () => {
                 {index + 1}
             <img
                 key={index}
-                src={pdf}
+                src={pdf[1]}
                 alt={`PDF ${index + 1}`}
-                onClick={() => viewPdf(pdf)}
-                className='max-w-sm'
+                onClick={() => viewPdf(index)}
+                // className='w-lg md:max-w-sm'
             />
             </>
         ))}
