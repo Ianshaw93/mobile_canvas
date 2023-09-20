@@ -24,7 +24,10 @@ const PdfView = () => {
   // add images to pin
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const router = useRouter();
-  const { dataUrl } = router.query;
+  let { dataUrl } = router.query as {dataUrl: string};
+  if (!dataUrl) {
+    dataUrl = ''
+  }
 
   function calcDistance(p1: Point, p2: Point) {
     let a = p1.x - p2.x
@@ -120,6 +123,7 @@ const PdfView = () => {
           width={canvasDimensions.width}
           height={canvasDimensions.height}
         />
+        
       </div>
       {/* <CameraLogic /> */}
       {showPinPopup && <PinPopup setShowPinPopup={setShowPinPopup}/>}
