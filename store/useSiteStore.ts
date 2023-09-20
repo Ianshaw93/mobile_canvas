@@ -45,6 +45,7 @@ const useSiteStore = create((set) => {
         setCanvasDimensions: (dimensions: Dimensions) => set(() => ({
             canvasDimensions: dimensions
         })),
+        
     }
 })
 

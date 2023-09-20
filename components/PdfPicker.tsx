@@ -53,7 +53,7 @@ const PdfPicker = () => {
             // @ts-ignore
             const context = canvas.getContext("2d")
     
-            const scale = 1.5 // was 1.5
+            const scale = 1 // was 1.5
             const viewport = page.getViewport({ scale: scale })
     
                 // Prepare canvas using PDF page dimensions
