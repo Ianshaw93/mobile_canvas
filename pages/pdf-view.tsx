@@ -109,8 +109,8 @@ const PdfView = () => {
     <>
       <canvas
       ref={canvasRef}
-      width={canvasDimensions.width/4}
-      height={canvasDimensions.height/4}
+      width={canvasDimensions.width/8}
+      height={canvasDimensions.height/8}
       className='border border-black rounded-md bg-transparent inset-0 absolute z-10'
       onPointerDown={handlePointerDown}
       // onPointerUp={handlePointerUp}      
@@ -120,8 +120,8 @@ const PdfView = () => {
         <img
           src={dataUrl} 
           alt="Full PDF" 
-          width={canvasDimensions.width * 4}
-          height={canvasDimensions.height * 4}
+          width={canvasDimensions.width * 16}
+          height={canvasDimensions.height * 16}
         />
         
       </div>
