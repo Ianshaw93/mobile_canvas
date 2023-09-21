@@ -122,6 +122,7 @@ const PdfView = () => {
           alt="Full PDF" 
           width={canvasDimensions.width * 16}
           height={canvasDimensions.height * 16}
+          className='overflow-x-auto'
         />
         
       </div>
