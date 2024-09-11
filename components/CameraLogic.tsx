@@ -1,133 +1,295 @@
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
+import useSiteStore from '@/store/useSiteStore';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
+type Image = {
+  key: string;
+  pointId: string;
+  url: string;
+  pointIndex: number;
+};
 
-const CameraLogic= () => {
-  const [imageArray, setImageArray] = React.useState<any[]>([]);
+type Point = {
+  id: string;
+  x: number;
+  y: number;
+  images: Image[];
+};
+// send in images to be displayed
+// @ts-ignore
+const CameraLogic= ({selectedPoint, planId}) => {
   // how to have Platform check?
   // Capacitor.getPlatform()
-  const isAvailable = Capacitor.isPluginAvailable('Camera');
+  const addImageToPin = useSiteStore((state) => state.addImageToPin);
+  const plan = useSiteStore((state) => state.plans.find(plan => plan.id === planId));
+  const points = plan ? plan.points : [];
+  const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
+  const [comment, setComment] = useState<string>(''); // State variable for comment
+  // const point = points.find((p) => p.id === selectedPoint);
+  console.log("plan: ", plan)
+  console.log("points: ", points)
+  // console.log("selectedPoint: ", selectedPoint)
+  // console.log("point: ", point)
+  const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
+  console.log("imageArray@top: ", imageArray)
 
-  async function loadFiles() {
-    setImageArray([])
-
-    Filesystem.readdir({
-      directory: Directory.Data,
-      path: IMAGE_DIR
-    }).then(result => {
-      console.log("result: ", result)
-      // @ts-ignore
-      loadFileData(result.files)
-      // setImageArray(result.files)
-    }).catch(err => {
-      console.log("err: ", err)
-      Filesystem.mkdir({ // removed await
-        directory: Directory.Data,
-        path: IMAGE_DIR        
-      })
-    })
-  } 
-
-  async function loadFileData(fileNames: any[]) {
-    console.log("fileNames: ", fileNames)
-    let temp = []
-    for (let f of fileNames) {
-      const filePath = `${IMAGE_DIR}/${f.name}`
-      const readFile = await Filesystem.readFile({
-        directory: Directory.Data,
-        path: filePath
-      })
-      console.log("readFile: ", readFile)
-      temp.push({
-        name: f.name,
-        path: filePath,
-        data: `data:image/jpeg;base64,${readFile.data}`,
-      })
-      
-    }
-    setImageArray(temp)
-  }
-
-  const takePicture = async () => {
-    const image = await Camera.getPhoto({
-      quality: 90,
-      allowEditing: true,
-      resultType: CameraResultType.Uri,
-      source: CameraSource.Camera
-    });
-    console.log("imaage: ", image)
-    var imageUrl = image.webPath;
-    if (image) {
-      // saveImage(image);
-      // @ts-ignore
-      setImageArray((prevImages) => [...prevImages, image])
-        // @ts-ignore
- 
-      
-    }
-    // Can be set to the src of an image now
-    // imageElement.src = imageUrl;
-  }
-
-  const saveImage = async (photo: Photo) => {
+  
+    const saveImageToLocalStorage = async (photo: Photo) => {
       const base64Data = await readAsBase64(photo);
-      console.log("base64Data: ", base64Data)
-
       const fileName = new Date().getTime() + '.jpeg';
-      const savedFile = await Filesystem.writeFile({
-        directory: Directory.Data,
-        path: `${IMAGE_DIR}/${fileName}`,
+      console.log("fileName @ save function: ", fileName)
+      await Filesystem.writeFile({
+        path: fileName,
         data: base64Data,
-      })
-      console.log("savedFile: ", savedFile)
-      loadFiles();
-      async function readAsBase64(photo: Photo) {
-        if (Capacitor.isNativePlatform()) {
-          // do something
-          const file = await Filesystem.readFile({
-            // @ts-ignore
-            path: photo.path,
-          })
-
-          return file.data
-        } else {
-          // web app
-
-          const response = await fetch(photo.webPath!)
-          const blob = await response.blob()
-
-          return await convertBlobToBase64(blob) as string
-        }
-      }
-      
-    }
-    const convertBlobToBase64 = (blob: Blob) => new Promise((resolve, reject) => { 
-      const reader = new FileReader
-      reader.onerror = reject
+        directory: Directory.Data
+      });
+      return fileName;
+    };
+  
+    const readAsBase64 = async (photo: Photo) => {
+      const response = await fetch(photo.webPath!);
+      const blob = await response.blob();
+      return await convertBlobToBase64(blob) as string;
+    };
+  
+    const convertBlobToBase64 = (blob: Blob) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
       reader.onload = () => {
-        resolve(reader.result)
+        resolve(reader.result);
+      };
+      reader.readAsDataURL(blob);
+    });
+  
+    const takePicture = async () => {
+      const image = await Camera.getPhoto({
+        quality: 90,
+        allowEditing: true,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera
+      });
+      console.log("image: ", image);
+      if (image) {
+        const fileName = await saveImageToLocalStorage(image);
+        const filePath = `${Directory.Data}/${fileName}`;
+        console.log("fileName: ", fileName);
+        // Find the index of the point
+        const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
+  
+        // Transform the Photo object into the Image type
+        const transformedImage: Image = {
+          key: fileName,
+          pointId: selectedPoint.id,
+          url: fileName || '',
+          pointIndex: pointIndex
+        };
+  
+        // Save the image and update the state
+        setImageArray((prevImages) => [...prevImages, transformedImage]);
+        await saveImageToLocalStorage(transformedImage);
+  
+        // Add the image to the pin
+        addImageToPin(planId, selectedPoint.id, transformedImage);
+        // addCommentToPin(planId, selectedPoint.id, comment);
       }
-      reader.readAsDataURL(blob)
-    })
+    };
+  
+    const loadFileData = async (fileNames: Image[]) => {
+      console.log("fileNames: ", fileNames);
+      let temp = [];
+      for (let f of fileNames) {
+        const filePath = `${Directory.Data}/${f.key}`;
+        const readFile = await Filesystem.readFile({
+          directory: Directory.Data,
+          path: f.key
+        });
+        console.log("readFile: ", readFile);
+        temp.push({
+          ...f,
+          data: `data:image/jpeg;base64,${readFile.data}`,
+        });
+      }
+      setImageArray(temp);
+      console.log("temp: ", temp, "imageArray: ", imageArray);
+      // Do something with temp, e.g., set state
+    }
+    const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newComment = e.target.value;
+      setComment(newComment);
+      addCommentToPin(planId, selectedPoint.id, newComment);
+    };
 
+    useEffect(() => {
+      if (selectedPoint) {
+        loadFileData(selectedPoint.images);
+        setComment(selectedPoint.comment || ''); // Load the comment for the selected point
+      }
+    }, [selectedPoint]);  
+    return (
+      <div>
+        <button onClick={takePicture}>Take Picture</button>
+        <div>
+          {imageArray.map((img, index) => (
+            // console.log("img: ", img.url),
+            // console.log("img directory: ", `${Directory.Data}/${img.key}`),
+            
+            <img key={index} src={`${Directory.Data}/${img.url || img}`} alt={`Image ${index}`} />
+          ))}
+          <textarea
+            placeholder="Write a comment..."
+            value={comment}
+            onChange={handleCommentChange}
+          />
+        </div>
+      </div>
+    );
+  };
+  
+  export default CameraLogic;
 
-  return (
-    <>
-      <button onClick={takePicture}>Take Picture</button>
-      {imageArray.map((image, index) => {
-        console.log("image: ", image, index)
-        return (
-          <div key={index} className='max-w-sm max-h-sm'>
-            {/* <img src={image.data} alt={image.name} /> */}
-            <img src={image.webPath} alt={image.name} />
-          </div>
-        )
-      })}
-    </>
-  )
-}
+  // useEffect(() => {
+  //   if (selectedPoint) {
+  //     loadFileData(selectedPoint.images);
+  //   }
+  // }, [selectedPoint]);
+
+//   async function loadFiles() { // perhaps should get from state?
+//     setImageArray([])
+    
+
+//     Filesystem.readdir({
+//       directory: Directory.Data,
+//       path: IMAGE_DIR
+//     }).then(result => {
+//       console.log("result: ", result)
+//       // @ts-ignore
+//       loadFileData(result.files)
+//       // setImageArray(result.files)
+//     }).catch(err => {
+//       console.log("err: ", err)
+//       Filesystem.mkdir({ // removed await
+//         directory: Directory.Data,
+//         path: IMAGE_DIR        
+//       })
+//     })
+//   } 
+
+//   async function loadFileData(fileNames: any[]) {
+//     console.log("fileNames: ", fileNames)
+//     let temp = []
+//     for (let f of fileNames) {
+//       const filePath = `${IMAGE_DIR}/${f.name}`
+//       const readFile = await Filesystem.readFile({
+//         directory: Directory.Data,
+//         path: filePath
+//       })
+//       console.log("readFile: ", readFile)
+//       temp.push({
+//         name: f.name,
+//         webPath: filePath,
+//         data: `data:image/jpeg;base64,${readFile.data}`,
+//       })
+      
+//     }
+//     setImageArray(temp)
+//   }
+
+//   const takePicture = async () => {
+//     const image = await Camera.getPhoto({
+//       quality: 90,
+//       allowEditing: true,
+//       resultType: CameraResultType.Uri,
+//       source: CameraSource.Camera
+//     });
+//     console.log("imaage: ", image)
+//     var imageUrl = image.webPath;
+//     if (image) {
+//       // saveImage(image);
+//       // @ts-ignore
+//       // setImageArray((prevImages) => [...prevImages, image])
+//       // saveImage(image);
+
+//       // // @ts-ignore
+//       // addImageToPin(planId, point.id, image );
  
-export default CameraLogic
+//       const transformedImage: Image = {
+//         key: image.path || '', // Assuming `path` is a unique identifier
+//         // @ts-ignore
+//         pointId: selectedPoint.id,
+//         url: image.webPath || ''
+//       };
+  
+//       // Save the image and update the state
+//       setImageArray((prevImages) => [...prevImages, transformedImage]);
+//       saveImage(transformedImage);
+  
+//       // Add the image to the pin
+//       // @ts-ignore
+//       addImageToPin(planId, selectedPoint.id, transformedImage);
+//     }
+//     // Can be set to the src of an image now
+//     // imageElement.src = imageUrl;
+//   }
+
+//   const saveImage = async (photo: Photo) => {
+//       const base64Data = await readAsBase64(photo);
+//       console.log("base64Data: ", base64Data)
+
+//       const fileName = new Date().getTime() + '.jpeg';
+//       const savedFile = await Filesystem.writeFile({
+//         directory: Directory.Data,
+//         path: `${IMAGE_DIR}/${fileName}`,
+//         data: base64Data,
+//       })
+//       console.log("savedFile: ", savedFile)
+//       loadFiles();
+//       async function readAsBase64(photo: Photo) {
+//         if (Capacitor.isNativePlatform()) {
+//           // do something
+//           const file = await Filesystem.readFile({
+//             // @ts-ignore
+//             path: photo.path,
+//           })
+
+//           return file.data
+//         } else {
+//           // web app
+
+//           const response = await fetch(photo.webPath!)
+//           const blob = await response.blob()
+          
+//           return await convertBlobToBase64(blob) as string
+//         }
+//       }
+      
+//     }
+//     const convertBlobToBase64 = (blob: Blob) => new Promise((resolve, reject) => { 
+//       const reader = new FileReader
+//       reader.onerror = reject
+//       reader.onload = () => {
+//         resolve(reader.result)
+//       }
+//       reader.readAsDataURL(blob)
+//     })
+
+
+//   return (
+//     <>
+//       <button onClick={takePicture}>Take Picture</button>
+//       {imageArray.map((image, index) => {
+//         console.log("image at popup: ", image, index)
+//         return (
+//           <div key={index} className='max-w-sm max-h-sm'>
+//             {/* <img src={image.data} alt={image.name} /> */}
+//             <img src={image.webPath} alt={image.name} />
+//           </div>
+//         )
+//       })}
+//     </>
+//   )
+// }
+ 
+// export default CameraLogic

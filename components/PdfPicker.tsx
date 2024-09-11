@@ -1,127 +1,131 @@
-import React from 'react'
-import { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import useSiteStore from '../store/useSiteStore'
+import useSiteStore from '../store/useSiteStore';
+import { usePDF } from '../hooks/usePDF';
 
 type Dimensions = {
-  width: number
-  height: number
-}
+  width: number;
+  height: number;
+};
 
-type State = {
-  plans: Array<React.ReactNode>
-  canvasDimensions: Dimensions | {}
-  addPlan: (plan: React.ReactNode) => void
-  setCanvasDimensions: (dimensions: Dimensions) => void
-}
-// @ts-ignore
-const pdfjs = await import('pdfjs-dist/build/pdf');
-// @ts-ignore
-const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker.entry');
+// Helper function to convert Blob to Base64
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
-pdfjs.GlobalWorkerOptions.workerSrc = null;
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-// TODO: save pdfs to state
-// allow multiple
-// show small versions in column
-// click on pdf, go to page with pdf in canvas
-// TODO: show small versions, but data reflects large version
 const PdfPicker = () => {
-    const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
-    const [ previewImage, setPreviewImage ] = useState<boolean>();
-    // const [ canvasDimensions, setCanvasDimensions ] = useState({})
-    // @ts-ignore
-    const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions) 
-    const [pdfs, setPdfs] = useState([]);
-    const router = useRouter();
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [previewImage, setPreviewImage] = useState<boolean>(false);
+  const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
+  const addPlan = useSiteStore((state) => state.addPlan);
+  const plans = useSiteStore((state) => state.plans);
+  const router = useRouter();
+  const pdfjs = usePDF();
+  const [mounted, setMounted] = useState(false); // Track if the component is mounted
+  console.log("plans: ", plans)
 
-    // @ts-ignore
-    function handleFileChange(event) {
-        const file = event.target.files[0]
-        if (file && pdfCanvasRef.current) {
-        
-            const loadingTask = pdfjs.getDocument(URL.createObjectURL(file))
-            // @ts-ignore
-            loadingTask.promise.then((pdf) => {
-    
-            const pageNumber = 1
-            // @ts-ignore
-            pdf.getPage(pageNumber).then((page) => {
-            // console.log("setting up pdf", pdfCanvasRef.current)
-            const canvas = pdfCanvasRef.current
-            // const canvas = document.createElement('canvas');
-            // @ts-ignore
-            const context = canvas.getContext("2d")
-    
-            const scale = 1 // was 1.5
-            const viewport = page.getViewport({ scale: scale })
-    
-                // Prepare canvas using PDF page dimensions
-                // @ts-ignore
-                canvas.height = viewport.height;
-                // @ts-ignore
-                canvas.width = viewport.width;
-                console.log("viewport: ",viewport.width, viewport.height)
-                // @ts-ignore
-                setCanvasDimensions({width: canvas.width, height: canvas.height})
-    
-                // Render PDF page into canvas context
-                var renderContext = {
-                canvasContext: context,
-                viewport: viewport,
-                };
-                var renderTask = page.render(renderContext);
-                renderTask.promise.then(() => {
-                // @ts-ignore
-                setPdfs((prevPdfs) => [...prevPdfs, canvas.toDataURL()]);
-                });
-                setPreviewImage(true)
-            
-        })
-      })
-    }  
+  useEffect(() => {
+    setMounted(true); // Set to true once component is mounted
+  }, []);
+
+  if (!mounted) {
+    // Render nothing on the server and until the client mounts
+    return null;
   }
-  // @ts-ignore
-  const viewPdf = (dataUrl) => {
+  // Handle file upload and rendering to canvas
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files ? event.target.files[0] : null;
+    if (file && pdfCanvasRef.current) {
+      const base64PDF = await blobToBase64(file); // Convert Blob to Base64
+
+      // @ts-ignore
+      const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
+      loadingTask.promise.then((pdf: any) => {
+        const pageNumber = 1;
+        pdf.getPage(pageNumber).then((page: any) => {
+          const canvas = pdfCanvasRef.current;
+          const context = canvas?.getContext('2d');
+          const scale = 1;
+          const viewport = page.getViewport({ scale });
+
+          if (canvas) {
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            setCanvasDimensions({ width: canvas.width, height: canvas.height });
+
+            // Render PDF page into canvas
+            const renderContext = {
+              canvasContext: context,
+              viewport,
+            };
+            const renderTask = page.render(renderContext);
+            renderTask.promise.then(() => {
+              const thumbnail = canvas.toDataURL(); // Save thumbnail
+
+              // Create a new plan object with the Base64 URL instead of Blob URL
+              const newPlan = {
+                id: `${Date.now()}`, // Unique ID
+                url: base64PDF, // Store the Base64 string instead of a Blob URL
+                thumbnail, // Thumbnail for preview
+                dimensions: { width: canvas.width, height: canvas.height },
+                points: [],
+                images: [],
+              };
+
+              addPlan(newPlan); // Add plan to the store
+              setPreviewImage(true);
+            });
+          }
+        });
+      });
+    }
+  };
+
+  // Navigate to the PDF view
+  const viewPdf = (planUrl: string) => {
     router.push({
       pathname: '/pdf-view',
-      query: { dataUrl },
+      query: { dataUrl: planUrl },
     });
   };
 
   return (
     <>
-        <div>
-            <label>
-                <input 
-                    id="image"
-                    name="image"
-                    type="file"
-                    accept=".pdf"
-                    onChange={handleFileChange}
-                />
-            </label>
-        </div>
-        <div>
-            <canvas 
-            ref={pdfCanvasRef}
-            className='z-1 hidden'
-            />
-        {pdfs.map((pdf, index) => (
-            <>
-                {index + 1}
-            <img
-                key={index}
-                src={pdf}
-                alt={`PDF ${index + 1}`}
-                onClick={() => viewPdf(pdf)}
-                className='max-w-sm'
-            />
-            </>
-        ))}
-        </div>
-    </>
-  )
-}
+      <div>
+        <label>
+          <input
+            id="image"
+            name="image"
+            type="file"
+            accept=".pdf"
+            onChange={handleFileChange}
+          />
+        </label>
+      </div>
 
-export default PdfPicker
+      <canvas ref={pdfCanvasRef} className="hidden" />
+
+      <div>
+        {plans.map((plan, index) => (
+          <div key={index} className="mb-4">
+            <p>{`PDF ${index + 1}`}</p>
+            <img
+              // @ts-ignore
+              src={plan.thumbnail}
+              alt={`PDF ${index + 1}`}
+              onClick={() => viewPdf(plan.url)}
+              className="max-w-sm cursor-pointer"
+            />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
+
+export default PdfPicker;
