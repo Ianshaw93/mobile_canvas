@@ -5,7 +5,9 @@ import useSiteStore from '@/store/useSiteStore';
 import DownloadStateButton from '@/components/DownloadButton';
 import AddPlanButton from '@/components/AddPlanButton';
 
+
 import { usePDF } from '@/hooks/usePDF';
+import { render } from 'react-dom';
 
 type Point = {
   id: string;
@@ -27,6 +29,7 @@ const PdfView = () => {
   const [pdfLoaded, setPdfLoaded] = useState<boolean>(false);
   const [renderTask, setRenderTask] = useState<any>(null); // Track ongoing render tasks
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [scaleFactor, setScaleFactor] = useState(1); 
   const router = useRouter();
   let { dataUrl } = router.query as { dataUrl: string };
   const pdfjs = usePDF();
@@ -61,16 +64,24 @@ const PdfView = () => {
     const canvas = canvasRef.current;
     // @ts-ignore
     const context = canvas.getContext('2d');
+    
     const viewport = page.getViewport({ scale: 1 });
-
+    // Calculate scale factor based on canvas size and viewport size
     // @ts-ignore
-    canvas.height = viewport.height;
+    const scaleX = canvas.width / viewport.width;
     // @ts-ignore
-    canvas.width = viewport.width;
+    const scaleY = canvas.height / viewport.height;
+    const calculatedScaleFactor = Math.min(scaleX, scaleY); // Use the smaller factor to fit the content
+    
+    setScaleFactor(calculatedScaleFactor); // Store the scale factor in the state
+    // // @ts-ignore
+    // canvas.height = viewport.height;
+    // // @ts-ignore   
+    // canvas.width = viewport.width;
 
     const renderContext = {
       canvasContext: context,
-      viewport,
+      viewport: page.getViewport({ scale: calculatedScaleFactor }),
     };
 
     // Initiate a new render task and store it in the state
@@ -78,7 +89,7 @@ const PdfView = () => {
     setRenderTask(task);
 
     await task.promise;
-
+    renderPoints();
     // await page.render(renderContext).promise;
     // @ts-ignore
     const imageData = canvas.toDataURL('image/png');
@@ -148,11 +159,11 @@ const PdfView = () => {
     const context = canvas.getContext('2d');
     if (!context) return;
 
-    context.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
-    const multiple = 6;
+    // context.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
     points.forEach((point) => {
       context.fillStyle = 'blue';
-      context.fillRect(point.x*multiple - 2.5, point.y*multiple - 2.5, 15, 15); // Render points
+      // not clear why these do not line up?
+      context.fillRect(point.x*scaleFactor - 2.5, point.y*scaleFactor - 2.5, 5, 5); // Render points
     });
   }
 
@@ -162,12 +173,13 @@ const PdfView = () => {
     if (!canvas || !currentPlan) return;
     const rect = canvas.getBoundingClientRect();
     console.log('Rect:', rect);
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const x = (event.clientX - rect.left) / scaleFactor;
+    const y = (event.clientY - rect.top) / scaleFactor;
     console.log('Pointer:', x, y );
     console.log('Event:', event.pageX, event.pageY );
     // const pointer = { x: x, y: y };
-    const pointer = { x: event.pageX, y: event.pageY };
+    const pointer = { x: x, y: y };
+    // @ts-ignore
     const closestPoint = findClosestPin(pointer); // add images and blank comment?
 
     if (closestPoint) {
@@ -191,6 +203,9 @@ const PdfView = () => {
   const handlePinClick = (point: Point) => {
     setSelectedPoint(point);
     setShowPinPopup(true);
+  };
+  const handleBackClick = () => {
+    router.push('/');
   };
 
   return (
@@ -243,9 +258,10 @@ const PdfView = () => {
           planId={currentPlan?.id || ''} // Pass the plan ID to the popup
         />
       )}
-      <DownloadStateButton />
-      <AddPlanButton />
+      {/* <AddPlanButton /> */}
       </div>
+      <button onClick={handleBackClick}>Back</button>
+      {/* <DownloadStateButton /> */}
     </>
   );
 };

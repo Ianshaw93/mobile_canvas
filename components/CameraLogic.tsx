@@ -33,6 +33,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   console.log("points: ", points)
   // console.log("selectedPoint: ", selectedPoint)
   // console.log("point: ", point)
+  // @ts-ignore
   const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
   console.log("imageArray@top: ", imageArray)
 
@@ -88,8 +89,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
         };
   
         // Save the image and update the state
-        setImageArray((prevImages) => [...prevImages, transformedImage]);
-        await saveImageToLocalStorage(transformedImage);
+        setImageArray((prevImages) => [...prevImages, fileName]);
+        await saveImageToLocalStorage(image);
   
         // Add the image to the pin
         addImageToPin(planId, selectedPoint.id, transformedImage);
@@ -112,6 +113,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           data: `data:image/jpeg;base64,${readFile.data}`,
         });
       }
+      // @ts-ignore
       setImageArray(temp);
       console.log("temp: ", temp, "imageArray: ", imageArray);
       // Do something with temp, e.g., set state
@@ -132,12 +134,21 @@ const CameraLogic= ({selectedPoint, planId}) => {
       <div>
         <button onClick={takePicture}>Take Picture</button>
         <div>
-          {imageArray.map((img, index) => (
-            // console.log("img: ", img.url),
-            // console.log("img directory: ", `${Directory.Data}/${img.key}`),
-            
-            <img key={index} src={`${Directory.Data}/${img.url || img}`} alt={`Image ${index}`} />
-          ))}
+        {imageArray.map((img, index) => {
+          console.log(`Rendering image ${index}: `, img);
+          // const src = img.data || `capacitor://localhost/_capacitor_file_/${Directory.Data}/${img.url}`;
+          // @ts-ignore
+          const src = img.data || img;
+          console.log(`Image src for image ${index}: `, src);
+          return (
+            <img key={index} src={src} alt={`Image ${index}`} />
+          )
+        })}
+
+          
+          {/* // {imageArray.map((img, index) => (
+          //   <img key={index} src={`${Directory.Data}/${img.url || img}`} alt={`Image ${index}`} />
+          // ))} */}
           <textarea
             placeholder="Write a comment..."
             value={comment}

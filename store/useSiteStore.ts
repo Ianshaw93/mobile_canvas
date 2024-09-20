@@ -34,6 +34,7 @@ type State = {
   addPoint: (planId: string, point: Point) => void;
   addImage: (planId: string, image: Image) => void;
   addImageToPin: (planId: string, pointId: string, image: Image) => void;
+  addCommentToPin: (planId: string, pointId: string, comment: string) => void;
   setCanvasDimensions: (dimensions: Dimensions) => void;
   loadPlans: () => Promise<void>; // Load plans from filesystem
   savePlans: () => Promise<void>; // Save plans to filesystem
