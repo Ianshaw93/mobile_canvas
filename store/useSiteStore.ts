@@ -135,6 +135,7 @@ const useSiteStore = create<State>((set, get) => ({
     const { plans } = get();
     await savePlansToFilesystem(plans);
   },
+  
 }));
 
 // Load plans when the store is initialized
