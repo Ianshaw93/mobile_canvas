@@ -8,6 +8,10 @@ type Dimensions = {
   height: number;
 };
 
+// follow perplexity
+
+
+
 // Helper function to convert Blob to Base64
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -23,6 +27,7 @@ const PdfPicker = () => {
   const [previewImage, setPreviewImage] = useState<boolean>(false);
   const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
   const addPlan = useSiteStore((state) => state.addPlan);
+  const addCanvasRef = useSiteStore((state) => state.addCanvasRef); // Add canvas ref to Zustand
   const plans = useSiteStore((state) => state.plans);
   const router = useRouter();
   const pdfjs = usePDF();
@@ -50,7 +55,7 @@ const PdfPicker = () => {
         pdf.getPage(pageNumber).then((page: any) => {
           const canvas = pdfCanvasRef.current;
           const context = canvas?.getContext('2d');
-          const scale = 1;
+          const scale = 1.5;
           const viewport = page.getViewport({ scale });
 
           if (canvas) {
@@ -76,7 +81,7 @@ const PdfPicker = () => {
                 points: [],
                 images: [],
               };
-
+              addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
               addPlan(newPlan); // Add plan to the store
               setPreviewImage(true);
             });
@@ -87,10 +92,14 @@ const PdfPicker = () => {
   };
 
   // Navigate to the PDF view
-  const viewPdf = (planUrl: string) => {
+  const viewPdf = (planUrl: string, planId: string) => {
+    console.log("planId: ", planId) 
     router.push({
       pathname: '/pdf-view',
-      query: { dataUrl: planUrl },
+      query: { 
+        // dataUrl: planUrl, 
+        pdfId: planId
+      },  // Passing Base64 URL here
     });
   };
 
@@ -108,17 +117,20 @@ const PdfPicker = () => {
         </label>
       </div>
 
-      <canvas ref={pdfCanvasRef} className="hidden" />
+      <canvas ref={pdfCanvasRef} 
+      className="hidden" 
+      />
 
       <div>
         {plans.map((plan, index) => (
+          console.log("plan: ", plan),
           <div key={index} className="mb-4">
             <p>{`PDF ${index + 1}`}</p>
             <img
               // @ts-ignore
               src={plan.thumbnail}
               alt={`PDF ${index + 1}`}
-              onClick={() => viewPdf(plan.url)}
+              onClick={() => viewPdf(plan.url, plan.id)}
               className="max-w-sm cursor-pointer"
             />
           </div>

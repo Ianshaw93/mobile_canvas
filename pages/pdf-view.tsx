@@ -8,6 +8,7 @@ import AddPlanButton from '@/components/AddPlanButton';
 
 import PdfViewer from '@/components/PdfViewer';
 import CanvasComponent from '@/components/CanvasComponent';
+import TouchFeedback from '@/components/TouchFeedback';
 // import { render } from 'react-dom';
 
 type Point = {
@@ -32,9 +33,26 @@ const PdfView = () => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [scaleFactor, setScaleFactor] = useState(1); 
   const router = useRouter();
-  let { dataUrl } = router.query as { dataUrl: string };
+  // let { dataUrl, pdfId } = router.query as { dataUrl: string, pdfId: string };
+  let { pdfId } = router.query as { pdfId: string };
+  const setPdfLoadedState = useSiteStore((state) => state.setPdfLoaded);
+  
   // const pdfjs = usePDF();
+  // console.log("pdfId: ", pdfId)
+  // console.log("dataUrl: ", dataUrl)
+  useEffect(() => {
+    // Log only after router.query is populated
+    if (pdfId) {
+      console.log("pdfId: ", pdfId);
+      setPdfLoadedState(false)
+      // console.log("dataUrl: ", dataUrl);
+    }
+  }, [pdfId]);  // Run this effect when `dataUrl` and `pdfId` change
 
+  // Prevent rendering of PdfViewer and CanvasComponent until `dataUrl` and `pdfId` are available
+  if (!pdfId) {
+    return <div>Loading...</div>;
+  }
 
   const handleBackClick = () => {
     router.push('/');
@@ -43,9 +61,20 @@ const PdfView = () => {
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-        <PdfViewer pdfUrl={dataUrl} />
-        <CanvasComponent dataUrl={dataUrl}/>
+        <div style={{ position: 'relative', 
+                    // width: '100%', height: '100%', 
+                    flexGrow: 1,
+                      // overflow: 'auto', // Allow scrolling
+                      // cursor: 'grab', // Change cursor when hovering over the PDF
+
+         }}>
+          <div style={{ width: '100%', height: '100%', zIndex: 0, position: 'absolute' }}>
+            {/* <PdfViewer pdfUrl={dataUrl} pdfId={pdfId}/> */}
+            <PdfViewer pdfId={pdfId}/>
+          </div>
+          {/* <CanvasComponent dataUrl={dataUrl} pdfId={pdfId}/> */}
+          <CanvasComponent pdfId={pdfId}/>
+          {/* <TouchFeedback /> */}
         </div>
         <div style={{ textAlign: 'center', padding: '200px 0' }}>
           <button onClick={handleBackClick}>Back</button>

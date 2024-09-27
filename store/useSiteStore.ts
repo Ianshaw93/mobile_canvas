@@ -20,11 +20,17 @@ type Image = {
   pointIndex: number;
 };
 
+type RenderableContent = {
+  type: 'pdf' | 'image'; // Specify the type of content (PDF, image, etc.)
+  data: string | ArrayBuffer; // The raw PDF data or base64 string for an image
+};
+
 type Plan = {
   id: string;
   url: string; // Path to the PDF file stored on the device
   points: Point[];
   images: Image[];
+  content?: RenderableContent; // Renderable content (PDF, images, etc.)
 };
 
 type State = {
@@ -36,8 +42,13 @@ type State = {
   addImageToPin: (planId: string, pointId: string, image: Image) => void;
   addCommentToPin: (planId: string, pointId: string, comment: string) => void;
   setCanvasDimensions: (dimensions: Dimensions) => void;
+  addCanvasRef: (id: string, ref: HTMLCanvasElement | null, url: string) => void; // Add function to add canvas refs
+  getCanvasUrl: (id: string) => string; // Get function to retrieve canvas refs
   loadPlans: () => Promise<void>; // Load plans from filesystem
   savePlans: () => Promise<void>; // Save plans to filesystem
+  getPlan: (id: string) => Plan | undefined;
+  pdfLoaded: boolean;
+  setPdfLoaded: (loaded: boolean) => void;
 };
 
 // Helper function to save plans to the filesystem
@@ -69,6 +80,26 @@ const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
 const useSiteStore = create<State>((set, get) => ({
   plans: [],
   canvasDimensions: {},
+  canvasRefs: {},  // Store canvas refs in an object
+  pdfLoaded: false,
+  setPdfLoaded: (loaded: boolean) => {
+    set({ pdfLoaded: loaded });
+  },
+  addCanvasRef: (id: string, ref: HTMLCanvasElement | null, url: string) => {
+    console.log('Adding canvas ref', id, ref);
+    // @ts-ignore
+    set((state) => ({canvasRefs: { ...state.canvasRefs, [id]: url }, }));
+  },
+  getCanvasUrl: (id: string) => {
+    // @ts-ignore
+    return get().canvasRefs[id] || null; // Return canvas ref or null if not found
+  },
+  getPlan: (id: string) => {
+    return get().plans.find((plan) => plan.id === id);
+  },
+  // addPlan: (newPlan) => set((state) => ({
+  //   plans: [...state.plans, newPlan],
+  // })),
   addPlan: (plan: Plan) => {
     set((state) => {
       const updatedPlans = [...state.plans, plan];

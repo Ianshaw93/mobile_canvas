@@ -2,6 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import PinPopup from '@/components/PinPopup';
 import useSiteStore from '@/store/useSiteStore';
 
+
+// TODO: double click for pin drops
+// pin popup to show in middle of innerwindow, rather than centre of pdf/perhaps could be offset to pin location
 const elementConfig = {
   "pin": "blue",
 };
@@ -20,7 +23,7 @@ type Image = {
 };
 
 // @ts-ignore
-function CanvasComponent({dataUrl}) {
+function CanvasComponent({pdfId}) {
   const [selectedPoint, setSelectedPoint] = useState(null);  // For showing selected pin in popup
   const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
   const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
@@ -31,8 +34,9 @@ function CanvasComponent({dataUrl}) {
   const plans = useSiteStore((state) => state.plans);  // Get plans (including points) from the store
   const addPoint = useSiteStore((state) => state.addPoint);  // To add a new pin to the store
 
-  const currentPlan = plans.find((plan) => plan.url === dataUrl);  // Find the current plan by its ID
+  const currentPlan = plans.find((plan) => plan.id === pdfId);  // Find the current plan by its ID
   const points = currentPlan?.points || [];  // Get points from the plan
+  const pdfLoaded = useSiteStore((state) => state.pdfLoaded);  // Check if the PDF is loaded
 
 
   const renderPoints = useCallback(() => {
@@ -53,7 +57,7 @@ function CanvasComponent({dataUrl}) {
   }, [points]);
   // Handle pointer down to add or select a pin
   // @ts-ignore
-  const handlePointerDown = (event) => {
+  const handleDoublePointerDown = (event) => { // needs to be double click
     const canvas = canvasRef.current;
     if (!canvas || !currentPlan) return;
     // @ts-ignore
@@ -107,14 +111,18 @@ const findClosestPin = useCallback(
   );
 
   // UseLayoutEffect to render points when the component is mounted or points change
+  // should be after pdf is loaded
   useLayoutEffect(() => {
-    renderPoints();
-  }, [renderPoints]);
+    if (pdfLoaded) {
+
+      renderPoints();
+    }
+  }, [renderPoints, pdfLoaded]);
 
   return (
     <>
       {/* Canvas for rendering pins */}
-      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:100 }}>
         <canvas
           ref={canvasRef}
           // @ts-ignore
@@ -122,10 +130,11 @@ const findClosestPin = useCallback(
           // @ts-ignore
           height={canvasDimensions.height}
           className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
-          onPointerDown={handlePointerDown}
+          // onPointerDown={handlePointerDown}
+          onDoubleClick={handleDoublePointerDown}
         />
         
-        {/* Pin Popup for the selected pin */}
+        {/* Pin Popup for the selected pin - should show in middle of viewport/innerwindow*/}
         {showPinPopup && selectedPoint && (
           <PinPopup
             setShowPinPopup={setShowPinPopup}
