@@ -174,7 +174,7 @@ const handlePointerUp = (event) => {
     const y = event.clientY - rect.top;
   
     const pointer = { x, y };
-    changePointLocation(currentPlan.id, movablePoint.id, x, y);
+    // changePointLocation(currentPlan.id, movablePoint.id, x, y);
   }
 }
 

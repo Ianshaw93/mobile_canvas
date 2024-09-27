@@ -39,6 +39,7 @@ type State = {
   addPlan: (plan: Plan) => void;
   addPoint: (planId: string, point: Point) => void;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => void;
+  deletePoint: (planId: string, pointId: string) => void;
   addImage: (planId: string, image: Image) => void;
   addImageToPin: (planId: string, pointId: string, image: Image) => void;
   addCommentToPin: (planId: string, pointId: string, comment: string) => void;
@@ -124,6 +125,19 @@ const useSiteStore = create<State>((set, get) => ({
           const updatedPoints = plan.points.map((point) =>
             point.id === pointId ? { ...point, x, y } : point
           );
+          return { ...plan, points: updatedPoints };
+        }
+        return plan;
+      });
+      savePlansToFilesystem(updatedPlans);
+      return { plans: updatedPlans };
+    });
+  },
+  deletePoint: (planId, pointId) => { 
+    set((state) => {
+      const updatedPlans = state.plans.map((plan) => {
+        if (plan.id === planId) {
+          const updatedPoints = plan.points.filter((point) => point.id !== pointId);
           return { ...plan, points: updatedPoints };
         }
         return plan;
