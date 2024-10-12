@@ -18,6 +18,13 @@ type Point = {
   y: number;
   images: Image[];
 };
+
+const requestFilesystemPermission = async () => {
+  if (Capacitor.getPlatform() === 'android') {
+    const permission = await Filesystem.requestPermissions();
+    console.log('Filesystem permission status:', permission);
+  }
+};
 // send in images to be displayed
 // @ts-ignore
 const CameraLogic= ({selectedPoint, planId}) => {
@@ -37,16 +44,39 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
   console.log("imageArray@top: ", imageArray)
 
-  
+
+  const platform = Capacitor.getPlatform();
+  console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
+
     const saveImageToLocalStorage = async (photo: Photo) => {
       const base64Data = await readAsBase64(photo);
       const fileName = new Date().getTime() + '.jpeg';
+      // await uploadToDropbox(base64Data, fileName);
       console.log("fileName @ save function: ", fileName)
       await Filesystem.writeFile({
         path: fileName,
         data: base64Data,
         directory: Directory.Data
       });
+
+      //   // Check platform and request permissions for Android
+      // if (Capacitor.getPlatform() === 'android') {
+      //   const permissionGranted = await requestFilesystemPermission();
+      //   // @ts-ignore
+      //   if (!permissionGranted) {
+      //     console.error("Permission to write to external storage was denied");
+      //     return fileName;
+      //   }
+      // }
+      // await new Promise(resolve => setTimeout(resolve, 100)); // Small delay (e.g., 100ms)
+      
+      // await Filesystem.writeFile({
+      //   path: fileName,
+      //   data: base64Data,
+      //   directory: Directory.ExternalStorage//Documents
+      // });    
+      // console.log("filepath: ",Capacitor.convertFileSrc(`Documents/${fileName}`))
+
       return fileName;
     };
   

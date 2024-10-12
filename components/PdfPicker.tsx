@@ -116,6 +116,9 @@ const PdfPicker = () => {
           />
         </label>
       </div>
+      {/* <button onClick={() => saveToDropbox('public\test_pdf.pdf', 'test_pdf.pdf')}>
+        Save to Dropbox
+      </button> */}
 
       <canvas ref={pdfCanvasRef} 
       className="hidden" 

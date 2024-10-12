@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import PinPopup from '@/components/PinPopup';
 import useSiteStore from '@/store/useSiteStore';
-import DownloadStateButton from '@/components/DownloadButton';
-import AddPlanButton from '@/components/AddPlanButton';
+import DownloadStateButton from '@/components/DownloadButton'; // send via api call
+// import AddPlanButton from '@/components/AddPlanButton';
 
 
 import PdfViewer from '@/components/PdfViewer';
 import CanvasComponent from '@/components/CanvasComponent';
-import TouchFeedback from '@/components/TouchFeedback';
 // import { render } from 'react-dom';
 
 type Point = {
@@ -62,25 +60,26 @@ const PdfView = () => {
     <>
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <div style={{ position: 'relative', 
-                    // width: '100%', height: '100%', 
                     flexGrow: 1,
-                      // overflow: 'auto', // Allow scrolling
-                      // cursor: 'grab', // Change cursor when hovering over the PDF
-
          }}>
           <div style={{ width: '100%', height: '100%', zIndex: 0, position: 'absolute' }}>
-            {/* <PdfViewer pdfUrl={dataUrl} pdfId={pdfId}/> */}
             <PdfViewer pdfId={pdfId}/>
           </div>
-          {/* <CanvasComponent dataUrl={dataUrl} pdfId={pdfId}/> */}
           <CanvasComponent pdfId={pdfId}/>
-          {/* <TouchFeedback /> */}
         </div>
-        <div style={{ textAlign: 'center', padding: '200px 0' }}>
-          <button onClick={handleBackClick}>Back</button>
+        <div style={{ textAlign: 'center', padding: '20px 0', color: 'grey', zIndex:99999 }}>
+          
+          <button 
+            onClick={handleBackClick}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            type="button"
+          >
+            Back
+          </button>
+          <DownloadStateButton />
+          
         </div>
       </div>
-      {/* <DownloadStateButton /> */}
     </>
   );
 };

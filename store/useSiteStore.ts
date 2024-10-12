@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import exp from 'constants';
 
 type Dimensions = {
@@ -18,6 +19,7 @@ interface Point {
 type Image = {
   key: string; // Key to retrieve the image from local storage
   pointIndex: number;
+  // data: string; // Base64 string of the image 
 };
 
 type RenderableContent = {
@@ -77,6 +79,37 @@ const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
     console.error('Error loading plans from filesystem', error);
     return [];
   }
+};
+// @ts-ignore
+const saveImageToExternalStorage = async (imageUri: string, fileName: string): Promise<string | null> => {
+  // try {
+    const readResult = await Filesystem.readFile({
+      path: imageUri,
+    });
+
+    const directory = Capacitor.getPlatform() === 'android' 
+      ? Directory.ExternalStorage 
+      : Directory.Documents;
+
+    const path = `${fileName}`;
+    await Filesystem.writeFile({
+      path: path,
+      data: readResult.data,
+      directory: directory,
+      recursive: true,
+    });
+
+    // Return the full path of the saved file
+    const fullPath = await Filesystem.getUri({
+      directory: directory,
+      path: path
+    });
+
+  //   return fullPath.uri;
+  // } catch (error) {
+  //   console.error('Error saving image to external storage:', error);
+  //   return null;
+  // }
 };
 
 const useSiteStore = create<State>((set, get) => ({
@@ -146,20 +179,52 @@ const useSiteStore = create<State>((set, get) => ({
       return { plans: updatedPlans };
     });
   },
-  addImageToPin: (planId, pointId, image) => {
-    set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.map((point) =>
-            point.id === pointId ? { ...point, images: [...point.images, image] } : point
-          );
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+  // addImageToJson: async(planId, image, imageUrl) => { 
+  //   const readResult = await Filesystem.readFile({
+  //     path: imageUri,
+  //   });
+
+  //   // Create the image object with the base64 data
+  //   const imageObject ={
+  //     key: imageUrl,
+  //     pointIndex: 0, // or another value depending on your use case
+  //     data: readResult.data, // base64 string representing the image
+  //   };
+  //   set((state) => {
+  //     const updatedImages = [...state.images, imageObject];
+  //   });
+  // },
+  addImageToPin: async(planId, pointId, image) => {
+    try {
+      // Save the image to external storage
+      if (!image.key) {
+        console.error('Image key is undefined');
+        return;
+      }
+  
+      // const fileName = `${Date.now()}.jpeg`;
+      // saveImageToExternalStorage(image.key, fileName);
+  
+      // if (!savedImagePath) {
+      //   console.error('Failed to save image to external storage');
+      //   return;
+      // }
+      set((state) => {
+        const updatedPlans = state.plans.map((plan) => {
+          if (plan.id === planId) {
+            const updatedPoints = plan.points.map((point) =>
+              point.id === pointId ? { ...point, images: [...point.images, image] } : point
+            );
+            return { ...plan, points: updatedPoints };
+          }
+          return plan;
+        });
+        savePlansToFilesystem(updatedPlans);
+        return { plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
-    });
+    }catch (error) {
+      console.error('Error saving image:', error);
+    }
   },
   addCommentToPin: (planId, pointId, comment) => {
     set((state) => {

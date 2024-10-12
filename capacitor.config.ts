@@ -9,7 +9,6 @@ const config: CapacitorConfig = {
     url: "http://192.168.0.14:3000",
     "allowNavigation": ["*"],
     cleartext: true
-    
   },
   // "server": {
   //   "androidScheme": "http",
