@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import exp from 'constants';
+import { Network } from '@capacitor/network'; // Import Network Plugin
+import { sendData } from '@/components/ApiCalls';
 
 type Dimensions = {
   width: number;
@@ -38,6 +39,7 @@ type Plan = {
 type State = {
   plans: Plan[];
   canvasDimensions: Dimensions | {};
+  offlineQueue: File[];
   addPlan: (plan: Plan) => void;
   addPoint: (planId: string, point: Point) => void;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => void;
@@ -53,6 +55,9 @@ type State = {
   getPlan: (id: string) => Plan | undefined;
   pdfLoaded: boolean;
   setPdfLoaded: (loaded: boolean) => void;
+  addToOfflineQueue: (file: File) => void; // New: Add file to queue
+  removeFromOfflineQueue: () => void; // New: Remove file from queue after successful upload
+  processOfflineQueue: () => Promise<void>; // New: Process queue when online
 };
 
 // Helper function to save plans to the filesystem
@@ -105,6 +110,12 @@ const saveImageToExternalStorage = async (imageUri: string, fileName: string): P
       path: path
     });
 
+
+
+
+
+
+
   //   return fullPath.uri;
   // } catch (error) {
   //   console.error('Error saving image to external storage:', error);
@@ -116,7 +127,35 @@ const useSiteStore = create<State>((set, get) => ({
   plans: [],
   canvasDimensions: {},
   canvasRefs: {},  // Store canvas refs in an object
+  offlineQueue: [], // Initialize the offline queue
   pdfLoaded: false,
+  // Functions for offline queue
+  addToOfflineQueue: (file: File) => {
+    set((state) => ({
+      offlineQueue: [...state.offlineQueue, file],
+    }));
+  },
+  removeFromOfflineQueue: () => {
+    set((state) => ({
+      offlineQueue: state.offlineQueue.slice(1),
+    }));
+  },
+  processOfflineQueue: async () => {
+    const { offlineQueue, removeFromOfflineQueue } = get();
+
+    // Only attempt to upload if there are items in the queue
+    while (offlineQueue.length > 0) {
+      try {
+        const file = offlineQueue[0];
+        // Attempt to upload the file (implement your upload logic here)
+        await sendData(file);
+        removeFromOfflineQueue(); // Remove after successful upload
+      } catch (error) {
+        console.log('Failed to upload file, retrying later:', error);
+        break; // Stop processing if upload fails to avoid rapid retries
+      }
+    }
+  },
   setPdfLoaded: (loaded: boolean) => {
     set({ pdfLoaded: loaded });
   },
@@ -261,10 +300,19 @@ const useSiteStore = create<State>((set, get) => ({
     const { plans } = get();
     await savePlansToFilesystem(plans);
   },
+
+  
   
 }));
 
+
 // Load plans when the store is initialized
 useSiteStore.getState().loadPlans();
+// Initialize the queue processing when the app comes online
+Network.addListener('networkStatusChange', async (status) => {
+  if (status.connected) {
+    await useSiteStore.getState().processOfflineQueue();
+  }
+});
 
 export default useSiteStore;

@@ -91,7 +91,7 @@ const DownloadStateButton = () => {
     console.log('Download button clicked');
     // const csv = convertStateToCSV(plans); // Convert the state to CSV
     // downloadCSV(csv, 'plans_data.csv'); // Trigger download
-    sendData()
+    // sendData()
   };
 
   return (

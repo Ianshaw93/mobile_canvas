@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '../store/useSiteStore';
 import { usePDF } from '../hooks/usePDF';
+import {sendData} from './ApiCalls';
 
 type Dimensions = {
   width: number;
@@ -29,6 +30,7 @@ const PdfPicker = () => {
   const addPlan = useSiteStore((state) => state.addPlan);
   const addCanvasRef = useSiteStore((state) => state.addCanvasRef); // Add canvas ref to Zustand
   const plans = useSiteStore((state) => state.plans);
+  const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
   const router = useRouter();
   const pdfjs = usePDF();
   const [mounted, setMounted] = useState(false); // Track if the component is mounted
@@ -47,7 +49,8 @@ const PdfPicker = () => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
       const base64PDF = await blobToBase64(file); // Convert Blob to Base64
-
+      // send file to server
+      addToOfflineQueue(file)
       // @ts-ignore
       const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
       loadingTask.promise.then((pdf: any) => {

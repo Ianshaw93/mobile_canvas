@@ -3,6 +3,8 @@ import React, { useEffect, useState } from 'react'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
+import { sendData } from './ApiCalls';
+import { send } from 'process';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type Image = {
@@ -34,6 +36,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const plan = useSiteStore((state) => state.plans.find(plan => plan.id === planId));
   const points = plan ? plan.points : [];
   const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
+  const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
   const [comment, setComment] = useState<string>(''); // State variable for comment
   // const point = points.find((p) => p.id === selectedPoint);
   console.log("plan: ", plan)
@@ -51,6 +54,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
     const saveImageToLocalStorage = async (photo: Photo) => {
       const base64Data = await readAsBase64(photo);
       const fileName = new Date().getTime() + '.jpeg';
+
       // await uploadToDropbox(base64Data, fileName);
       console.log("fileName @ save function: ", fileName)
       await Filesystem.writeFile({
@@ -58,6 +62,20 @@ const CameraLogic= ({selectedPoint, planId}) => {
         data: base64Data,
         directory: Directory.Data
       });
+        // Convert Base64 to Blob
+    const byteCharacters = atob(base64Data.split(',')[1]);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+    // Create a File object from the Blob
+    // const fileName = new Date().getTime() + '.jpeg';
+    // check if online -> likely need to do this logic in apiCall?S
+    const file = new File([blob], fileName, { type: 'image/jpeg' });
+    addToOfflineQueue(file);
 
       //   // Check platform and request permissions for Android
       // if (Capacitor.getPlatform() === 'android') {
