@@ -6,6 +6,9 @@ import { sendData } from '@/components/ApiCalls';
 import { requestStoragePermissions } from '@/components/manualPermissions';
 import { use } from 'react';
 
+// TODO: offline queue actioned only on button press -> goes through series until empty
+
+
 type Dimensions = {
   width: number;
   height: number;

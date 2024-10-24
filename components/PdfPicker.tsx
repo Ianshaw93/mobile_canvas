@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '../store/useSiteStore';
 import { usePDF } from '../hooks/usePDF';
-import {downloadProject} from './ApiCalls';
+import {downloadProject, getAccessToken} from './ApiCalls';
 
 type Dimensions = {
   width: number;
@@ -130,9 +130,9 @@ const PdfPicker = () => {
             Download Project
           </button>
       </div>
-      {/* <button onClick={() => saveToDropbox('public\test_pdf.pdf', 'test_pdf.pdf')}>
-        Save to Dropbox
-      </button> */}
+      <button onClick={() => getAccessToken()}>
+        Log in to Dropbox
+      </button>
 
       <canvas ref={pdfCanvasRef} 
       className="hidden" 
