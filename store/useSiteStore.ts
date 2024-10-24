@@ -3,6 +3,8 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network'; // Import Network Plugin
 import { sendData } from '@/components/ApiCalls';
+import { requestStoragePermissions } from '@/components/manualPermissions';
+import { use } from 'react';
 
 type Dimensions = {
   width: number;
@@ -40,6 +42,7 @@ type State = {
   plans: Plan[];
   canvasDimensions: Dimensions | {};
   offlineQueue: File[];
+  isProcessingQueue: boolean; // Add this property to the state type
   addPlan: (plan: Plan) => void;
   addPoint: (planId: string, point: Point) => void;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => void;
@@ -58,6 +61,9 @@ type State = {
   addToOfflineQueue: (file: File) => void; // New: Add file to queue
   removeFromOfflineQueue: () => void; // New: Remove file from queue after successful upload
   processOfflineQueue: () => Promise<void>; // New: Process queue when online
+  hasRequestedPermissions: boolean;
+  setHasRequestedPermissions: (requested: boolean) => void;
+  requestStoragePermissions: () => Promise<void>;
 };
 
 // Helper function to save plans to the filesystem
@@ -129,7 +135,37 @@ const useSiteStore = create<State>((set, get) => ({
   canvasRefs: {},  // Store canvas refs in an object
   offlineQueue: [], // Initialize the offline queue
   pdfLoaded: false,
+  isProcessingQueue: false, // Track if the queue is being processed
+  hasRequestedPermissions: false,
   // Functions for offline queue
+  setHasRequestedPermissions: (requested: boolean) => set({ hasRequestedPermissions: requested }),
+
+  requestStoragePermissions: async () => {
+    const { hasRequestedPermissions, setHasRequestedPermissions } = get();
+
+    // Check if we've already requested permissions
+    if (hasRequestedPermissions) {
+      console.log("Permissions have already been requested.");
+      return;
+    }
+
+    // Check current permission status
+    const permissionStatus = await requestStoragePermissions()
+
+    // if (permissionStatus) {
+    //   // Request permissions if not granted
+    //   // @ts-ignore
+    //   const result = await Permissions.request({
+    //     permissions: ['android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.READ_EXTERNAL_STORAGE'],
+    //   });
+    //   console.log(result);
+    // } else {
+    //   console.log("Permissions already granted.");
+    // }
+
+    // Set the flag so we don't request again
+    setHasRequestedPermissions(true);
+  },
   addToOfflineQueue: (file: File) => {
     set((state) => ({
       offlineQueue: [...state.offlineQueue, file],
@@ -141,8 +177,11 @@ const useSiteStore = create<State>((set, get) => ({
     }));
   },
   processOfflineQueue: async () => {
-    const { offlineQueue, removeFromOfflineQueue } = get();
+    const { offlineQueue, removeFromOfflineQueue, isProcessingQueue } = get();
+    // Prevent multiple concurrent processes
+    if (isProcessingQueue) return;
 
+    set({ isProcessingQueue: true });
     // Only attempt to upload if there are items in the queue
     while (offlineQueue.length > 0) {
       try {
@@ -308,6 +347,7 @@ const useSiteStore = create<State>((set, get) => ({
 
 // Load plans when the store is initialized
 useSiteStore.getState().loadPlans();
+useSiteStore.getState().requestStoragePermissions();
 // Initialize the queue processing when the app comes online
 Network.addListener('networkStatusChange', async (status) => {
   if (status.connected) {

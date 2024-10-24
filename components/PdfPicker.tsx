@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '../store/useSiteStore';
 import { usePDF } from '../hooks/usePDF';
-import {sendData} from './ApiCalls';
+import {downloadProject} from './ApiCalls';
 
 type Dimensions = {
   width: number;
@@ -94,6 +94,10 @@ const PdfPicker = () => {
     }
   };
 
+  function handleDownloadClick() {
+    console.log("Downloading project button press")
+    downloadProject()
+  }
   // Navigate to the PDF view
   const viewPdf = (planUrl: string, planId: string) => {
     console.log("planId: ", planId) 
@@ -118,6 +122,13 @@ const PdfPicker = () => {
             onChange={handleFileChange}
           />
         </label>
+        <button 
+            onClick={handleDownloadClick}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+            type="button"
+          >
+            Download Project
+          </button>
       </div>
       {/* <button onClick={() => saveToDropbox('public\test_pdf.pdf', 'test_pdf.pdf')}>
         Save to Dropbox
