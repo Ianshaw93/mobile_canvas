@@ -1,13 +1,12 @@
-name: Build iOS App
+name: Initialize iOS Folder
 
 on:
-  workflow_run:
-    workflows: ["Initialize iOS Folder"]
-    types:
-      - completed
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build-ios:
+  initialize-ios:
     runs-on: macos-latest
 
     steps:
@@ -23,34 +22,33 @@ jobs:
         run: npm ci
 
       - name: Build web app
-        run: npm run build
+        run: npm run build  # This generates the `out` directory
 
-      - name: Sync Capacitor iOS Platform
+      - name: Set up Capacitor and Sync iOS Platform
         run: |
           npm install @capacitor/core @capacitor/cli
+          npx cap add ios
           npx cap sync ios
+          sleep 5  # Pause to ensure all files are updated
 
-      - name: Build iOS app
+      - name: List iOS Directory Contents
         run: |
-          xcodebuild clean archive \
-            -workspace ios/App/App.xcworkspace \
-            -scheme App \
-            -archivePath $RUNNER_TEMP/App.xcarchive \
-            -allowProvisioningUpdates \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+          echo "Listing files in ios directory:"
+          ls -R ios
 
-      - name: Export IPA
+      - name: Install CocoaPods dependencies
         run: |
-          xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/App.xcarchive \
-            -exportPath $RUNNER_TEMP/export \
-            -exportOptionsPlist ios/App/ExportOptions.plist \
-            -allowProvisioningUpdates
+          cd ios
+          if [ ! -f Podfile ]; then
+            echo "Error: Podfile not found. Please ensure 'npx cap sync ios' ran successfully."
+            exit 1
+          fi
+          pod install
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v3
-        with:
-          name: app
-          path: ${{ runner.temp }}/export/App.ipa
+      - name: Commit and Push iOS Folder
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add ios
+          git commit -m "Add ios folder with CocoaPods dependencies"
+          git push origin main
