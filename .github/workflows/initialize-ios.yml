@@ -20,6 +20,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build web app
+        run: npm run static  # This generates the `out` directory
         
       - name: Install Capacitor and Create iOS Platform
         run: |
