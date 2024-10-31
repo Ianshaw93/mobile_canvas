@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Build web app
-        run: npm run build  # This generates the `out` directory
+        run: npm run static  # This generates the `out` directory
 
       - name: Set up Capacitor and Sync iOS Platform
         run: |
@@ -39,10 +39,6 @@ jobs:
       - name: Install CocoaPods dependencies
         run: |
           cd ios
-          if [ ! -f Podfile ]; then
-            echo "Error: Podfile not found. Please ensure 'npx cap sync ios' ran successfully."
-            exit 1
-          fi
           pod install
 
       - name: Commit and Push iOS Folder
