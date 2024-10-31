@@ -29,14 +29,14 @@ jobs:
         npx cap add ios
         npx cap sync ios
 
-        - name: Install CocoaPods dependencies
-        run: |
-          cd ios
-          if [ ! -f Podfile ]; then
-            echo "Error: Podfile not found. Please ensure 'npx cap sync ios' ran successfully."
-            exit 1
-          fi
-          pod install
+    - name: Install CocoaPods dependencies
+      run: |
+        cd ios
+        if [ ! -f Podfile ]; then
+        echo "Error: Podfile not found. Please ensure 'npx cap sync ios' ran successfully."
+        exit 1
+        fi
+        pod install
 
     - name: Build iOS app
       run: |
