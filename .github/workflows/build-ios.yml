@@ -1,16 +1,18 @@
-name: Build iOS App for Private Use
+name: Build iOS App
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["Initialize iOS Folder"]
+    types:
+      - completed
 
 jobs:
-  build:
+  build-ios:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Check out code
+        uses: actions/checkout@v3
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -21,25 +23,12 @@ jobs:
         run: npm ci
 
       - name: Build web app
-        run: npm run static
+        run: npm run build
 
-      - name: Set up Capacitor
+      - name: Sync Capacitor iOS Platform
         run: |
           npm install @capacitor/core @capacitor/cli
-          npx cap add ios
-          sleep 5  # Pause to allow directory updates
           npx cap sync ios
-          sleep 5  # Pause to ensure all files are updated
-
-      - name: List iOS Directory Contents
-        run: |
-          echo "Listing files in ios directory:"
-          ls -R ios
-
-      - name: Install CocoaPods dependencies
-        run: |
-          cd ios
-          pod install
 
       - name: Build iOS app
         run: |
