@@ -2,15 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '../store/useSiteStore';
 import { usePDF } from '../hooks/usePDF';
-import {downloadProject, getAccessToken} from './ApiCalls';
+import {downloadProject, loginToDropbox} from './ApiCalls';
+import BackupButton from './BackupButton';
+import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 
 type Dimensions = {
   width: number;
   height: number;
 };
-
-// follow perplexity
-
 
 
 // Helper function to convert Blob to Base64
@@ -50,7 +49,10 @@ const PdfPicker = () => {
     if (file && pdfCanvasRef.current) {
       const base64PDF = await blobToBase64(file); // Convert Blob to Base64
       // send file to server
-      addToOfflineQueue(file)
+      const projectId = getFirstPlanIdOrDatetime();;
+      const planId = `${Date.now()}`
+      console.log("projectId: ", projectId, "planId: ", planId, file.name)
+      addToOfflineQueue(file, projectId, planId);
       // @ts-ignore
       const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
       loadingTask.promise.then((pdf: any) => {
@@ -77,12 +79,14 @@ const PdfPicker = () => {
 
               // Create a new plan object with the Base64 URL instead of Blob URL
               const newPlan = {
-                id: `${Date.now()}`, // Unique ID
+                id: planId, // Unique ID
                 url: base64PDF, // Store the Base64 string instead of a Blob URL
                 thumbnail, // Thumbnail for preview
                 dimensions: { width: canvas.width, height: canvas.height },
                 points: [],
                 images: [],
+                planId: planId,
+                projectId: projectId
               };
               addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
               addPlan(newPlan); // Add plan to the store
@@ -122,18 +126,21 @@ const PdfPicker = () => {
             onChange={handleFileChange}
           />
         </label>
-        <button 
+        {/* <button 
             onClick={handleDownloadClick}
             className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
             type="button"
           >
             Download Project
-          </button>
+          </button> */}
       </div>
-      <button onClick={() => getAccessToken()}>
-        Log in to Dropbox
+      <button onClick={() => loginToDropbox()}>
+        Log in to Dropbox testing
       </button>
-
+      {/* <button onClick={() => getAccessToken()}>
+        
+      </button> */}
+      <BackupButton />
       <canvas ref={pdfCanvasRef} 
       className="hidden" 
       />

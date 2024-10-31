@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
 import { sendData } from './ApiCalls';
 import { send } from 'process';
+import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type Image = {
@@ -12,6 +13,8 @@ type Image = {
   pointId: string;
   url: string;
   pointIndex: number;
+  projectId: string;
+  planId: string;
 };
 
 type Point = {
@@ -51,7 +54,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const platform = Capacitor.getPlatform();
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
 
-    const saveImageToLocalStorage = async (photo: Photo) => {
+    const saveImageToLocalStorage = async (photo: Photo, projectId: string, planId: string) => {
       const base64Data = await readAsBase64(photo);
       const fileName = new Date().getTime() + '.jpeg';
 
@@ -75,7 +78,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
     // const fileName = new Date().getTime() + '.jpeg';
     // check if online -> likely need to do this logic in apiCall?S
     const file = new File([blob], fileName, { type: 'image/jpeg' });
-    addToOfflineQueue(file);
+    addToOfflineQueue(file, projectId, planId);
 
       //   // Check platform and request permissions for Android
       // if (Capacitor.getPlatform() === 'android') {
@@ -121,8 +124,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
         source: CameraSource.Camera
       });
       console.log("image: ", image);
+      const projectId = getFirstPlanIdOrDatetime();;
       if (image) {
-        const fileName = await saveImageToLocalStorage(image);
+        const fileName = await saveImageToLocalStorage(image, projectId, planId);
         const filePath = `${Directory.Data}/${fileName}`;
         console.log("fileName: ", fileName);
         // Find the index of the point
@@ -133,12 +137,14 @@ const CameraLogic= ({selectedPoint, planId}) => {
           key: fileName,
           pointId: selectedPoint.id,
           url: fileName || '',
-          pointIndex: pointIndex
+          pointIndex: pointIndex,
+          projectId: projectId,
+          planId: planId
         };
   
         // Save the image and update the state
         setImageArray((prevImages) => [...prevImages, fileName]);
-        await saveImageToLocalStorage(image);
+        await saveImageToLocalStorage(image, projectId, planId);
   
         // Add the image to the pin
         addImageToPin(planId, selectedPoint.id, transformedImage);

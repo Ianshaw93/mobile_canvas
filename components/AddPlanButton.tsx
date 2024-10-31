@@ -10,6 +10,8 @@ const AddPlanButton = () => {
       url: 'https://example.com/plan1.pdf',
       points: [],
       images: [],
+      planId: 'plan-1',
+      projectId: 'project-1',
     };
     addPlan(newPlan);
   };
