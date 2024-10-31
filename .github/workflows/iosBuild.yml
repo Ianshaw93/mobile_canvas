@@ -26,6 +26,7 @@ jobs:
     - name: Set up Capacitor
       run: |
         npm install @capacitor/core @capacitor/cli
+        npx cap add ios
         npx cap sync ios
 
     - name: Install CocoaPods
