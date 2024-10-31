@@ -1,0 +1,58 @@
+name: Build iOS App for Private Use
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build web app
+      run: npm run build
+
+    - name: Set up Capacitor
+      run: |
+        npx cap sync ios
+
+    - name: Install CocoaPods
+      run: |
+        cd ios
+        pod install
+
+    - name: Build iOS app
+      run: |
+        xcodebuild clean archive \
+          -workspace ios/App/App.xcworkspace \
+          -scheme App \
+          -archivePath $RUNNER_TEMP/App.xcarchive \
+          -allowProvisioningUpdates \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Export IPA
+      run: |
+        xcodebuild -exportArchive \
+          -archivePath $RUNNER_TEMP/App.xcarchive \
+          -exportPath $RUNNER_TEMP/export \
+          -exportOptionsPlist ios/App/ExportOptions.plist \
+          -allowProvisioningUpdates
+
+    - name: Upload IPA
+      uses: actions/upload-artifact@v3
+      with:
+        name: app
+        path: ${{ runner.temp }}/export/App.ipa
