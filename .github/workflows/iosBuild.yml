@@ -32,7 +32,6 @@ jobs:
     - name: Install CocoaPods
       run: |
         cd ios
-        pod init
         pod install
 
     - name: Build iOS app
@@ -48,7 +47,9 @@ jobs:
 
     - name: Export IPA
       run: |
-        xcodebuild -exportArchive \
+          xcodebuild clean archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
           -archivePath $RUNNER_TEMP/App.xcarchive \
           -exportPath $RUNNER_TEMP/export \
           -exportOptionsPlist ios/App/ExportOptions.plist \
