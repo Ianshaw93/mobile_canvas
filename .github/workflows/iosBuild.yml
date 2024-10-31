@@ -27,7 +27,9 @@ jobs:
       run: |
         npm install @capacitor/core @capacitor/cli
         npx cap add ios
+        sleep 5  # Pause for 5 seconds to allow directory updates
         npx cap sync ios
+        sleep 5  # Pause for 5 seconds to allow directory updates
 
     - name: Install CocoaPods dependencies
       run: |
