@@ -31,13 +31,14 @@ jobs:
           npx cap sync ios
           sleep 5  # Pause to ensure all files are updated
 
+      - name: List iOS Directory Contents
+        run: |
+          echo "Listing files in ios directory:"
+          ls -R ios
+
       - name: Install CocoaPods dependencies
         run: |
           cd ios
-          if [ ! -f Podfile ]; then
-            echo "Error: Podfile not found. Please ensure 'npx cap sync ios' ran successfully."
-            exit 1
-          fi
           pod install
 
       - name: Build iOS app
