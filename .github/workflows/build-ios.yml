@@ -36,11 +36,6 @@ jobs:
           echo "Listing files in ios directory:"
           ls -R ios
 
-      - name: Install CocoaPods dependencies
-        run: |
-          cd ios
-          pod install
-
       - name: Commit and Push iOS Folder
         run: |
           git config --global user.name "github-actions[bot]"
