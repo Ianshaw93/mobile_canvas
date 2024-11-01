@@ -26,6 +26,7 @@ type Image = {
 
 // @ts-ignore
 function CanvasComponent({pdfId}) {
+  // move these to zustand
   const [selectedPoint, setSelectedPoint] = useState(null);  // For showing selected pin in popup
   const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
   const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
@@ -220,32 +221,38 @@ const findClosestPin = useCallback(
   return (
     <>
       {/* Canvas for rendering pins */}
-      <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:100 }}>
-        <canvas
-          ref={canvasRef}
-          // @ts-ignore
-          width={canvasDimensions.width}
-          // @ts-ignore
-          height={canvasDimensions.height}
-          className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
-          // onPointerDown={handlePointerDown}
-          onDoubleClick={handleDoublePointerDown}
-          onPointerDown={handlePointerDown}
-          onPointerLeave={handlePointerUp}
-          onPointerUp={handlePointerUp}
-          onPointerMove={handlePointerHeldDown}
-          // onDrag={handlePointerDown}
-          // onDragEnd={handlePointerUp}
-        />
-        
-        {/* Pin Popup for the selected pin - should show in middle of viewport/innerwindow*/}
-        {showPinPopup && selectedPoint && (
-          <PinPopup
-            setShowPinPopup={setShowPinPopup}
-            selectedPoint={selectedPoint}  // Pass the selected pin to the popup
-            planId={currentPlan?.id || ''}  // Pass the current plan ID to the popup
+      <div>
+        <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:200 }}>
+          <canvas
+            // style={{ position: 'relative', width: '100%', height: '100%', zIndex:200 }}
+            ref={canvasRef}
+            // @ts-ignore
+            width={canvasDimensions.width}
+            // @ts-ignore
+            height={canvasDimensions.height}
+            className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
+            // onPointerDown={handlePointerDown}
+            onDoubleClick={handleDoublePointerDown}
+            onPointerDown={handlePointerDown}
+            onPointerLeave={handlePointerUp}
+            onPointerUp={handlePointerUp}
+            onPointerMove={handlePointerHeldDown}
+            // onDrag={handlePointerDown}
+            // onDragEnd={handlePointerUp}
           />
-        )}
+        </div>
+          {/* Pin Popup for the selected pin - should show in middle of viewport/innerwindow*/}
+          {/* {showPinPopup && selectedPoint && (
+        <div style={{ position: 'absolute', width: '100%', height: '100%', zIndex:300 }}>
+            <PinPopup
+              setShowPinPopup={setShowPinPopup}
+              selectedPoint={selectedPoint}  // Pass the selected pin to the popup
+              planId={currentPlan?.id || ''}  // Pass the current plan ID to the popup
+            />
+        </div>
+          )} */}
+
+        
       </div>
     </>
   );

@@ -54,9 +54,11 @@ type State = {
   plans: Plan[];
   canvasDimensions: Dimensions | {};
   offlineQueue: FileQueueItem[];
+  showPinPopup: boolean;
   isProcessingQueue: boolean; // Add this property to the state type
   userTriggeredBackup: false, // New flag to track if the backup button was clicked
   accessToken: string | null; // Add access token state
+  setShowPinPopup: (show: boolean) => void;
   setUserTriggeredBackup: (triggered: boolean) => void;
   setAccessToken: (token: string) => void; // Add function to set the access token
   clearAccessToken: () => void; // Add function to clear the access token
@@ -160,6 +162,8 @@ const useSiteStore = create<State>((set, get) => ({
   hasRequestedPermissions: false,
   accessToken: null, // Initialize access token as null
   userTriggeredBackup: false, // Initialize as false
+  showPinPopup: false,
+  setShowPinPopup: (show: boolean) => set({ showPinPopup: show }),
   // Set access token function
   setAccessToken: (token: string) => set({ accessToken: token }),
   // @ts-ignore

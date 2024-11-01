@@ -7,6 +7,7 @@ import DownloadStateButton from '@/components/DownloadButton'; // send via api c
 
 import PdfViewer from '@/components/PdfViewer';
 import CanvasComponent from '@/components/CanvasComponent';
+import PinPopup from '@/components/PinPopup';
 // import { render } from 'react-dom';
 
 type Point = {
@@ -23,16 +24,23 @@ type Image = {
 };
 
 const PdfView = () => {
-  const [showPinPopup, setShowPinPopup] = useState<boolean>(false);
+  // const [showPinPopup, setShowPinPopup] = useState<boolean>(false);
   const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
   const [pdfImage, setPdfImage] = useState<string | null>(null); // State to store the Base64 image
   const [pdfLoaded, setPdfLoaded] = useState<boolean>(false);
   const [renderTask, setRenderTask] = useState<any>(null); // Track ongoing render tasks
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [scaleFactor, setScaleFactor] = useState(1); 
+  const plans = useSiteStore((state) => state.plans);  // Get plans (including points) from the store
+  const showPinPopup = useSiteStore((state) => state.showPinPopup);  // Get plans (including points) from the store
+  const setShowPinPopup = useSiteStore((state) => state.setShowPinPopup);  // Get plans (including points) from the store
+
+
   const router = useRouter();
   // let { dataUrl, pdfId } = router.query as { dataUrl: string, pdfId: string };
   let { pdfId } = router.query as { pdfId: string };
+  const currentPlan = plans.find((plan) => plan.id === pdfId);  // Find the current plan by its ID
+
   const setPdfLoadedState = useSiteStore((state) => state.setPdfLoaded);
   
   // const pdfjs = usePDF();
@@ -67,6 +75,15 @@ const PdfView = () => {
           </div>
           <CanvasComponent pdfId={pdfId}/>
         </div>
+        {showPinPopup && (
+        <div style={{ position: 'absolute', width: '100%', height: '100%', zIndex:300 }}>
+            <PinPopup
+              setShowPinPopup={setShowPinPopup}
+              selectedPoint={selectedPoint}  // Pass the selected pin to the popup
+              planId={currentPlan?.id || ''}  // Pass the current plan ID to the popup
+            />
+        </div>
+          )}
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'grey', zIndex:99999 }}>
           
           <button 
