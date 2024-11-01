@@ -25,3 +25,18 @@ body {
     )
     rgb(var(--background-start-rgb));
 }
+
+.sticky-bottom-menu {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 60px; /* Adjust height as necessary */
+  background-color: #333;
+  color: white;
+  z-index: 1000;
+  padding-bottom: env(safe-area-inset-bottom); /* Safe area for iOS */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
