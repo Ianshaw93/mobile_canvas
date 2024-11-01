@@ -115,35 +115,56 @@ const CameraLogic= ({selectedPoint, planId}) => {
       };
       reader.readAsDataURL(blob);
     });
+    const saveImageToFilesystem = async (base64Data: string, fileName: string) => {
+      await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Data,
+      });
+    };
+
+    const convertPhotoToBase64 = async (photo: Photo) => {
+      const response = await fetch(photo.webPath!);
+      const blob = await response.blob();
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    };
   
     const takePicture = async () => {
       const image = await Camera.getPhoto({
         quality: 90,
-        allowEditing: true,
+        allowEditing: false,
         resultType: CameraResultType.Uri,
         source: CameraSource.Camera
       });
       console.log("image: ", image);
       const projectId = getFirstPlanIdOrDatetime();;
       if (image) {
-        const fileName = await saveImageToLocalStorage(image, projectId, planId);
+        const base64Data = await convertPhotoToBase64(image);
+        const fileName = `${new Date().getTime()}.jpeg`;
+        // const fileName = await saveImageToLocalStorage(image, projectId, planId);
         const filePath = `${Directory.Data}/${fileName}`;
         console.log("fileName: ", fileName);
         // Find the index of the point
         const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
+        await saveImageToFilesystem(base64Data.split(',')[1], fileName);
   
         // Transform the Photo object into the Image type
         const transformedImage: Image = {
           key: fileName,
           pointId: selectedPoint.id,
-          url: fileName || '',
+          url: base64Data,
           pointIndex: pointIndex,
           projectId: projectId,
           planId: planId
         };
   
         // Save the image and update the state
-        setImageArray((prevImages) => [...prevImages, fileName]);
+        setImageArray((prevImages) => [...prevImages, base64Data]);
         await saveImageToLocalStorage(image, projectId, planId);
   
         // Add the image to the pin
@@ -195,7 +216,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           const src = img.data || img;
           console.log(`Image src for image ${index}: `, src);
           return (
-            <img key={index} src={src} alt={`Image ${index}`} />
+            <img key={index} src={src} alt={`Image ${index}`} width={100}/>
           )
         })}
 

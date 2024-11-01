@@ -5,8 +5,6 @@ import PdfViewer from '@/components/PdfViewer';
 import CanvasComponent from '@/components/CanvasComponent';
 
 const PdfView = () => {
-  const [showPinPopup, setShowPinPopup] = useState<boolean>(false);
-  const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
   const router = useRouter();
   const { pdfId } = router.query as { pdfId: string };
   const setPdfLoadedState = useSiteStore((state) => state.setPdfLoaded);
