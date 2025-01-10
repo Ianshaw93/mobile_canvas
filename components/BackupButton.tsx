@@ -14,6 +14,7 @@ const BackupButton = () => {
   const [localQueue, setLocalQueue] = useState<FileQueueItem[]>([]);
   const [processedItems, setProcessedItems] = useState<FileQueueItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const handleBackup = async () => {
     // Set backup as triggered by user in Zustand
@@ -22,35 +23,41 @@ const BackupButton = () => {
     // Copy Zustand offline queue to local state
     setLocalQueue([...offlineQueue]);
     setIsProcessing(true);
+    setIsSuccess(false);
 
     // Call the function to process the queue locally
     await processLocalQueue();
     
     // Once done, update Zustand with the processed queue
     finalizeQueueState();
+    
+    // Set success state and reset after 3 seconds
+    setIsSuccess(true);
+    setTimeout(() => setIsSuccess(false), 3000);
   };
 
   const processLocalQueue = async () => {
     for (let i = 0; i < localQueue.length; i++) {
-        // TODO: queue to have project and pdf id
       const {file, projectId, planId} = localQueue[i];
-      console.log(`************Processing file: ${file.name}`, projectId, planId, "*******");
       try {
         console.log(`Attempting to upload file: ${file.name}`);
-        await sendData( file, planId, projectId );
+        const success = await sendData(file, planId, projectId);
 
-        // Move successfully processed file to processed items
-        setProcessedItems((prev) => [...prev, { file, planId, projectId }]);
+        if (success) {
+          // Move successfully processed file to processed items
+          setProcessedItems((prev) => [...prev, { file, planId, projectId }]);
+          // Remove the file from local queue
+          setLocalQueue((prev) => prev.filter((item) => item !== localQueue[i]));
+        } else {
+          throw new Error('Upload failed');
+        }
 
-        // Remove the file from local queue
-        setLocalQueue((prev) => prev.filter((item) => item !== localQueue[i]));
-
-        // Adding a small delay between uploads to prevent rapid retries
         await new Promise((resolve) => setTimeout(resolve, 500));
 
       } catch (error) {
         console.log(`Failed to upload file: ${file.name}. Stopping processing.`);
-        break; // Stop processing if there's a failure
+        setIsSuccess(false);
+        break;
       }
     }
   };
@@ -70,13 +77,28 @@ const BackupButton = () => {
     console.log("Queue processing complete. Zustand updated.");
   };
 
+  // Check if queue is empty
+  const isQueueEmpty = offlineQueue.length === 0;
+
   return (
     <button 
       onClick={handleBackup}
-      disabled={isProcessing}
-      className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
+      disabled={isProcessing || isQueueEmpty}
+      className={`text-white font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 focus:outline-none ${
+        isSuccess 
+          ? "bg-green-600 hover:bg-green-700" 
+          : isQueueEmpty
+          ? "bg-gray-400 cursor-not-allowed" // Gray out when queue is empty
+          : "bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-700"
+      }`}
     >
-      {isProcessing ? "Processing..." : "Backup to Dropbox"}
+      {isProcessing 
+        ? "Processing..." 
+        : isSuccess 
+        ? "Successfully backed up!" 
+        : isQueueEmpty 
+        ? "Nothing to backup" 
+        : "Backup to Dropbox"}
     </button>
   );
 };

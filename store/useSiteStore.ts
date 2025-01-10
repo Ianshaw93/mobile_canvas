@@ -114,14 +114,12 @@ const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
 };
 // @ts-ignore
 const saveImageToExternalStorage = async (imageUri: string, fileName: string): Promise<string | null> => {
-  // try {
+  try {
     const readResult = await Filesystem.readFile({
       path: imageUri,
     });
 
-    const directory = Capacitor.getPlatform() === 'android' 
-      ? Directory.ExternalStorage 
-      : Directory.Documents;
+    const directory = Directory.Data;
 
     const path = `${fileName}`;
     await Filesystem.writeFile({
@@ -131,23 +129,16 @@ const saveImageToExternalStorage = async (imageUri: string, fileName: string): P
       recursive: true,
     });
 
-    // Return the full path of the saved file
     const fullPath = await Filesystem.getUri({
       directory: directory,
       path: path
     });
 
-
-
-
-
-
-
-  //   return fullPath.uri;
-  // } catch (error) {
-  //   console.error('Error saving image to external storage:', error);
-  //   return null;
-  // }
+    return fullPath.uri;
+  } catch (error) {
+    console.error('Error saving image:', error);
+    return null;
+  }
 };
 
 const useSiteStore = create<State>((set, get) => ({

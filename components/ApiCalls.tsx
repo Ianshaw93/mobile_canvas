@@ -104,72 +104,48 @@ const saveBlobAsBase64 = async (blob: Blob, fileName: string) => {
   // @ts-ignore
   export const sendData = async (file: File, projectId: string, planId: string) => {
       const { accessToken } = useSiteStore.getState();
+      console.log('Starting sendData with token:', !!accessToken);
 
-  if (!accessToken) {
-    console.error('Access token not available. Please authenticate first.');
-    return;
-  }
-  console.log("Sending data for: ", file.name)
+      try {
+        console.log('Attempting to write file:', {
+          fileName: file.name,
+          size: file.size,
+          directory: Directory.Documents
+        });
 
-  // Prepare the file for upload
-  const formData = new FormData();
-  formData.append('file', file);
+        const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Dropbox-API-Arg': JSON.stringify({
+              path: `/${projectId}/${planId}/${file.name}`,
+              mode: 'add',
+              autorename: true,
+              mute: false,
+            }),
+            'Content-Type': 'application/octet-stream',
+          },
+          body: file,
+        });
 
-  try {
-    const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Dropbox-API-Arg': JSON.stringify({
-          // folder should be project & then pdf plan
-          path: `/${projectId}/${planId}/${file.name}`,
-          mode: 'add',
-          autorename: true,
-          mute: false,
-        }),
-        'Content-Type': 'application/octet-stream',
-      },
-      body: file,
-    });
+        console.log('Dropbox response:', {
+          status: response.status,
+          ok: response.ok
+        });
 
-    const data = await response.json();
-    if (response.ok) {
-      console.log('File uploaded successfully:', data);
-    } else {
-      console.error('Error uploading file:', data.error_summary);
-    }
-  } catch (error) {
-    console.error('Failed to upload file to Dropbox:', error);
-  }
-      // TODO: change to send to dropbox -> in project folder
+        const data = await response.json();
+        console.log('Dropbox data:', data);
 
-      // const formData = new FormData();
-
-      // formData.append('file', file);
-      // formData.append('description', 'This is a test PDF file');
-      // console.log("File: ", file);
-
-      // let endpoint = `${subEndpoint}/uploadFormData`;
-
-      // console.log(endpoint);
-      // console.log(formData);
-      // const response = await fetch(
-      //   endpoint, 
-      //   {
-      //   method: 'POST',
-      //   body: formData,
-      // });  
-      // try{
-      //   const data = await response.json();
-      //   console.log("data received: ", data)
-
-      //   return data;
-    
-      // } catch (err) { 
-      //   console.log("Error: ",err)
-      // }
-    
-    }
+        return response.ok;
+      } catch (error) {
+        console.error('Error in sendData:', {
+          message: (error as Error).message,
+          type: (error as Error).name,
+          stack: (error as Error).stack
+        });
+        throw error;
+      }
+  };
 
     // Function to send JSON data as a file to Dropbox
 export const sendJsonAsFileToDropbox = async (jsonData: object, fileName: string, projectId: string) => {

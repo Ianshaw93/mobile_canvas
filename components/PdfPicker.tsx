@@ -5,6 +5,7 @@ import { usePDF } from '../hooks/usePDF';
 import {downloadProject, loginToDropbox} from './ApiCalls';
 import BackupButton from './BackupButton';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 type Dimensions = {
   width: number;
@@ -21,6 +22,22 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
     reader.readAsDataURL(blob);
   });
 };
+
+// Add this before trying to write files
+async function requestPermissions() {
+  try {
+    // Test write permissions by attempting to write a test file
+    await Filesystem.writeFile({
+      path: 'test.txt',
+      data: 'test',
+      directory: Directory.Documents
+    });
+    return true;
+  } catch (err) {
+    console.error('Error checking permissions:', err);
+    return false;
+  }
+}
 
 const PdfPicker = () => {
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
