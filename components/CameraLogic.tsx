@@ -200,9 +200,15 @@ const CameraLogic= ({selectedPoint, planId}) => {
     const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newComment = e.target.value;
       setComment(newComment);
-      addCommentToPin(planId, selectedPoint.id, newComment);
+
     };
 
+    const handleCommentBlur = () => {
+      if (comment && comment !== selectedPoint.comment) {
+      // only update when focus is lost
+      addCommentToPin(planId, selectedPoint.id, comment);
+      }
+    };
     useEffect(() => {
       if (selectedPoint) {
         loadFileData(selectedPoint.images);
@@ -232,6 +238,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
             placeholder="Write a comment..."
             value={comment}
             onChange={handleCommentChange}
+            onBlur={handleCommentBlur}
           />
         </div>
       </div>
