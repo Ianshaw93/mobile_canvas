@@ -3,8 +3,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network'; // Import Network Plugin
 import { sendData } from '@/components/ApiCalls';
-import { requestStoragePermissions } from '@/components/manualPermissions';
-
+import { requestFileSystemPermissions, requestCameraPermissions } from '@/components/requestiPermission';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
@@ -50,6 +49,12 @@ type FileQueueItem = {
   projectId: string;
 };
 
+// Add new type for permission status
+type PermissionStatus = {
+  camera: boolean;
+  storage: boolean;
+};
+
 type State = {
   plans: Plan[];
   canvasDimensions: Dimensions | {};
@@ -85,24 +90,35 @@ type State = {
   hasRequestedPermissions: boolean;
   setHasRequestedPermissions: (requested: boolean) => void;
   requestStoragePermissions: () => Promise<void>;
+  permissions: PermissionStatus;
+  checkAndRequestPermissions: () => Promise<void>;
 };
 
 // Helper function to save plans to the filesystem
 const savePlansToFilesystem = async (plans: Plan[]) => {
-  await Filesystem.writeFile({
-    path: 'plans.json',
-    data: JSON.stringify(plans),
-    directory: Directory.Documents,
-    encoding: Encoding.UTF8,
-  });
+  try {
+    // Request permissions first
+    await requestFileSystemPermissions();
+    
+    await Filesystem.writeFile({
+      path: 'plans.json',
+      data: JSON.stringify(plans),
+      directory: Directory.Data,
+      encoding: Encoding.UTF8,
+    });
+  } catch (error) {
+    console.error('***Error saving plans:', error);
+    throw error;
+  }
 };
 
 // Helper function to load plans from the filesystem
 const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
   try {
+    await requestFileSystemPermissions();
     const result = await Filesystem.readFile({
       path: 'plans.json',
-      directory: Directory.Documents,
+      directory: Directory.Data,
       encoding: Encoding.UTF8,
     });
     // @ts-ignore
@@ -115,23 +131,21 @@ const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
 // @ts-ignore
 const saveImageToExternalStorage = async (imageUri: string, fileName: string): Promise<string | null> => {
   try {
+    await requestFileSystemPermissions();
     const readResult = await Filesystem.readFile({
       path: imageUri,
     });
 
-    const directory = Directory.Data;
-
-    const path = `${fileName}`;
     await Filesystem.writeFile({
-      path: path,
+      path: fileName,
       data: readResult.data,
-      directory: directory,
+      directory: Directory.Documents,
       recursive: true,
     });
 
     const fullPath = await Filesystem.getUri({
-      directory: directory,
-      path: path
+      directory: Directory.Documents,
+      path: fileName
     });
 
     return fullPath.uri;
@@ -170,8 +184,10 @@ const useSiteStore = create<State>((set, get) => ({
     }
 
     // Check current permission status
-    const permissionStatus = await requestStoragePermissions()
-
+    const permissionStatus = await requestFileSystemPermissions()
+    const camerPermissionStatus = await requestCameraPermissions()
+    console.log('File system permission status:', permissionStatus);
+    console.log('Camera permission status:', camerPermissionStatus);
     // if (permissionStatus) {
     //   // Request permissions if not granted
     //   // @ts-ignore
@@ -391,11 +407,34 @@ const useSiteStore = create<State>((set, get) => ({
     const { plans } = get();
     await savePlansToFilesystem(plans);
   },
+  permissions: {
+    camera: false,
+    storage: false
+  },
+  checkAndRequestPermissions: async () => {
+    try {
+      const permissionStatus = await requestFileSystemPermissions()
+      const camerPermissionStatus = await requestCameraPermissions()
+      console.log('File system permission status:', permissionStatus);
+      console.log('Camera permission status:', camerPermissionStatus);
+      
+      set(state => ({
+        permissions: {
+          camera: camerPermissionStatus === 'granted',
+          storage: !!permissionStatus
+        }
+      }));
 
-  
-  
+      console.log('Permissions status:', permissionStatus);
+
+    } catch (error) {
+      console.error('Error requesting permissions:', error);
+    }
+  }
 }));
 
+// Initialize permissions check when store is created
+useSiteStore.getState().checkAndRequestPermissions();
 
 // Load plans when the store is initialized
 useSiteStore.getState().loadPlans();

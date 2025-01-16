@@ -116,11 +116,15 @@ const CameraLogic= ({selectedPoint, planId}) => {
       reader.readAsDataURL(blob);
     });
     const saveImageToFilesystem = async (base64Data: string, fileName: string) => {
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Data,
-      });
+      try {
+        await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Data // Using app-specific storage instead of external
+        });
+      } catch (err) {
+        console.error('Error saving file:', err);
+      }
     };
 
     const convertPhotoToBase64 = async (photo: Photo) => {

@@ -8,20 +8,27 @@ const config: CapacitorConfig = {
     androidScheme: 'http',
     iosScheme: 'myapp',
     url: "http://192.168.0.14:3000",
-    "allowNavigation": ["*"],
+    allowNavigation: ["*"],
     cleartext: true
   },
-  // "server": {
+    // "server": {
   //   "androidScheme": "http",
   //   "allowNavigation": ["*"],
   // iosScheme: 'myapp',
   //   "cleartext": true
   // },
-  "android": {
-    "allowMixedContent": true
-  },
-  "ios": {
-    "contentInset": "always"
+  plugins: {
+    Permissions: {
+      requestedPermissions: [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA"
+      ]
+    }
   }
 };
 

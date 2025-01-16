@@ -107,11 +107,7 @@ const saveBlobAsBase64 = async (blob: Blob, fileName: string) => {
       console.log('Starting sendData with token:', !!accessToken);
 
       try {
-        console.log('Attempting to write file:', {
-          fileName: file.name,
-          size: file.size,
-          directory: Directory.Documents
-        });
+        console.log('Attempting to write file:', JSON.stringify(file, null, 2));
 
         const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
           method: 'POST',
@@ -128,10 +124,7 @@ const saveBlobAsBase64 = async (blob: Blob, fileName: string) => {
           body: file,
         });
 
-        console.log('Dropbox response:', {
-          status: response.status,
-          ok: response.ok
-        });
+        console.log('Dropbox response:', JSON.stringify(response, null, 2));
 
         const data = await response.json();
         console.log('Dropbox data:', data);
