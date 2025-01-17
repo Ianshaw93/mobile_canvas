@@ -59,7 +59,15 @@ const PdfView = () => {
           </div>
           <CanvasComponent pdfId={pdfId} />
         </div>
-        <div style={{ textAlign: 'center', padding: '20px 0', color: 'grey', zIndex: 9999 }}>
+        <div style={{ 
+                      textAlign: 'center', 
+                      padding: '20px 0', 
+                      color: 'grey', 
+                      zIndex: 9999,
+                      userSelect: 'none',
+                      touchAction: 'none', 
+
+        }}>
           <button
             onClick={handleBackClick}
             className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
@@ -86,6 +94,8 @@ const PdfView = () => {
           justifyContent: 'center',
           alignItems: 'center',
           transform: `translateY(${window.scrollY}px)`, // Follow scroll position
+          userSelect: 'none',
+          touchAction: 'none',
         }}
           
       >

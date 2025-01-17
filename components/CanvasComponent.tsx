@@ -28,7 +28,7 @@ function CanvasComponent({pdfId}) {
   const [selectedPoint, setSelectedPoint] = useState(null);  // For showing selected pin in popup
   const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
   const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Store states (for pins)
   const canvasDimensions = useSiteStore((state) => state.canvasDimensions);
@@ -42,6 +42,7 @@ function CanvasComponent({pdfId}) {
   const [pointerIsUp, setPointerIsUp] = useState<boolean>(true);
   const [pointerDownLocation, setPointerDownLocation] = useState<{x: number, y: number}>({x: 0, y: 0});
   const [movablePoint, setMovablePoint] = useState<Point | null>(null);
+  const [guidePosition, setGuidePosition] = useState<{x: number, y: number} | null>(null);
 
 
   const renderPoints = useCallback(() => {
@@ -60,6 +61,31 @@ function CanvasComponent({pdfId}) {
       context.fillRect(point.x - 5, point.y - 5, 10, 10); // Render pins as small blue squares
     });
   }, [points]);
+
+  const renderPointsWithGuide = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    // Clear and render existing points
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    points.forEach((point) => {
+      context.fillStyle = elementConfig["pin"];
+      context.fillRect(point.x - 5, point.y - 5, 10, 10);
+    });
+
+    // Draw guide circle if exists
+    if (movablePoint && guidePosition) {
+      context.strokeStyle = 'orange';
+      context.setLineDash([5, 5]); // Dotted line
+      context.beginPath();
+      context.arc(guidePosition.x, guidePosition.y, 15, 0, 2 * Math.PI);
+      context.stroke();
+      context.setLineDash([]); // Reset line style
+    }
+  }, [points, movablePoint, guidePosition]);
+
   // Handle pointer down to add or select a pin
   // @ts-ignore
   const handleDoublePointerDown = (event) => { // needs to be double click
@@ -89,36 +115,38 @@ function CanvasComponent({pdfId}) {
  // @ts-ignore
  const handlePointerDown = (event) => { // needs to be hold for 0.5s, highlight, then move
   setPointerIsUp(false);
-  // if pointer up after 0.5s or x,y changed -> won't highlight pin
-  // if not double click!!!
+  console.log('Pointer down detected');
+
   const canvas = canvasRef.current;
-  if (!canvas || !currentPlan) return;
-  // @ts-ignore
+  if (!canvas || !currentPlan) {
+    console.log('No canvas or plan:', { canvas: !!canvas, plan: !!currentPlan });
+    return;
+  }
+  
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
-
   const pointer = { x, y };
+  console.log('Pointer coordinates:', pointer);
 
-  // Check if the pointer is close to any existing point (within a certain threshold)
+  // Check if the pointer is close to any existing point
   const closestPoint = findClosestPin(pointer);
+  console.log('Closest point found:', closestPoint);
+
   if (closestPoint) {
-    // add closestPoint to state for drag
-    // start timer, then highlight point
+    event.preventDefault(); // Prevent screen movement immediately when selecting a pin
     setStartHoldTime(Date.now());
     setPointerDownLocation({x, y});
-    // then move to pointer up location
-    
     setSelectedPoint(closestPoint);
-
+    console.log('Hold time and location set:', { 
+      time: Date.now(), 
+      location: {x, y},
+      selectedPoint: closestPoint
+    });
   } else {
+    console.log('No pin nearby, clearing states');
     setStartHoldTime(null);
     setSelectedPoint(null);
-    // // If no close pin is found, add a new pin
-    // const pointId = Date.now().toString();
-    // const newPoint = { id: pointId, x, y, images: [], comment: '' };
-    // addPoint(currentPlan.id, newPoint);  // Add the new point to the store
-    // renderPoints();  // Re-render points after adding a new one
   }
 };
 // const timeoutId = setTimeout(() => {
@@ -126,56 +154,47 @@ function CanvasComponent({pdfId}) {
 // }, 3000); // 3000 milliseconds = 3 seconds
 // @ts-ignore
 const handlePointerHeldDown = (event) => {
-  if (startHoldTime) {
-    const timeoutId = setTimeout(() => {
-      if (pointerIsUp) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas || !currentPlan) return;
-      // @ts-ignore
-      const rect = canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-    
-      const pointer = { x, y };
-      // check pointer is close to previous pointerdown location
-      let pointerDownLocationX = pointerDownLocation.x;
-      let pointerDownLocationY = pointerDownLocation.y;
-      // should be +5 or -5 pixels
-
-      if (pointer.x -15 < pointerDownLocationX && pointer.x +15 > pointerDownLocationX  && pointer.y -15 < pointerDownLocationY && pointer.y +15 > pointerDownLocationY) {
-        // see if pointer is up
-        
-        // see if pointer is same location as before
-        // if so, highlight pin - set pin to selected/moving
-        setMovablePoint(selectedPoint);
-        // then move point to pointer up location
-        // future - add point whilst moving
-
-      }
-   }, 800); // 3000 milliseconds = 3 seconds
-   timeoutId
-    // action time delay of 0.5s
-  
-  } 
-}
-// for drag to move pin
-// @ts-ignore
-const handlePointerUp = (event) => {
-
-  setPointerIsUp(true);
-  if (movablePoint) {
+  if (startHoldTime && selectedPoint) {
     const canvas = canvasRef.current;
     if (!canvas || !currentPlan) return;
-    // @ts-ignore
+    
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-  
-    const pointer = { x, y };
-    // changePointLocation(currentPlan.id, movablePoint.id, x, y);
+    
+    // If point is movable, just update guide position
+    if (movablePoint) {
+      event.preventDefault();
+      setGuidePosition({ x, y });
+      renderPointsWithGuide(); // New render function that includes guide
+    }
+
+    // Check if pointer is close to the initial pointer down location
+    const isNearInitialLocation = 
+      Math.abs(x - pointerDownLocation.x) < 15 && 
+      Math.abs(y - pointerDownLocation.y) < 15;
+
+    if (isNearInitialLocation && !pointerIsUp) {
+      // Make the point movable after hold time
+      const currentTime = new Date().getTime();
+      if (currentTime - startHoldTime > 800) { // 800ms hold time
+        setMovablePoint(selectedPoint);
+        console.log('Point is now movable:', selectedPoint);
+      }
+    }
   }
-}
+};
+// for drag to move pin
+// @ts-ignore
+const handlePointerUp = (event) => {
+  if (movablePoint && guidePosition) {
+    changePointLocation(currentPlan.id, movablePoint.id, guidePosition.x, guidePosition.y);
+  }
+  setMovablePoint(null);
+  setGuidePosition(null);
+  setPointerIsUp(true);
+  setStartHoldTime(null);
+};
 
 
   // Helper function to calculate the distance between two points
@@ -211,15 +230,22 @@ const findClosestPin = useCallback(
   // should be after pdf is loaded
   useLayoutEffect(() => {
     if (pdfLoaded) {
-
-      renderPoints();
+      renderPointsWithGuide();
     }
-  }, [renderPoints, pdfLoaded]);
+  }, [renderPointsWithGuide, pdfLoaded]);
 
   return (
     <>
       {/* Canvas for rendering pins */}
-      <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:100 }}>
+      <div 
+        style={{ 
+          position: 'relative', 
+          width: '100%', 
+          height: '100%', 
+          zIndex: 100,
+          touchAction: movablePoint ? 'none' : 'auto'
+        }}
+      >
         <canvas
           ref={canvasRef}
           // @ts-ignore
@@ -227,14 +253,12 @@ const findClosestPin = useCallback(
           // @ts-ignore
           height={canvasDimensions.height}
           className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
-          // onPointerDown={handlePointerDown}
           onDoubleClick={handleDoublePointerDown}
           onPointerDown={handlePointerDown}
           onPointerLeave={handlePointerUp}
           onPointerUp={handlePointerUp}
           onPointerMove={handlePointerHeldDown}
-          // onDrag={handlePointerDown}
-          // onDragEnd={handlePointerUp}
+          style={{ touchAction: movablePoint ? 'none' : 'auto' }}
         />
         
         {/* Pin Popup for the selected pin - should show in middle of viewport/innerwindow*/}
