@@ -18,7 +18,7 @@ const base64ToArrayBuffer = (base64: string) => {
   }
   return bytes.buffer; // Return ArrayBuffer
 };
-
+// @ts-ignore
 const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId, scale }) => {
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null); // State to store the Base64 image

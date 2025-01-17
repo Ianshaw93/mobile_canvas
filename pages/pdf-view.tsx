@@ -56,6 +56,7 @@ const PdfView = () => {
 
           }}>
           <div style={{ width: '100%', height: '100%', zIndex: 0, position: 'absolute' }}>
+            {/* @ts-ignore */}
             <PdfViewer pdfId={pdfId} scale={zoomLevel} />
           </div>
           <CanvasComponent 
