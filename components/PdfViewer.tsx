@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import useSiteStore from '@/store/useSiteStore';
 import { usePDF } from '@/hooks/usePDF';
+import debounce from 'lodash/debounce';
 
 type PdfViewerProps = {
   pdfId: string;
@@ -18,7 +19,7 @@ const base64ToArrayBuffer = (base64: string) => {
   return bytes.buffer; // Return ArrayBuffer
 };
 
-const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
+const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId, scale }) => {
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null); // State to store the Base64 image
   const pdfjs = usePDF(); // Load PDF.js
@@ -26,71 +27,65 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
   const plan = getPlan(pdfId); // Get the plan using pdfId
   const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
   const setPdfLoaded = useSiteStore((state) => state.setPdfLoaded);
+  const [localCanvasDimensions, setLocalCanvasDimensions] = useState({ width: 0, height: 0 });
 
-  // Render the PDF onto the canvas
-  const renderPdf = async () => {
+  // Memoize the render function
+  const renderPdf = useCallback(async () => {
     if (!pdfjs || !pdfCanvasRef.current || !plan?.url) return;
+    setPdfLoaded(false);
 
-    const pdfData = base64ToArrayBuffer(plan.url); // Convert base64 to ArrayBuffer
     try {
+      const pdfData = base64ToArrayBuffer(plan.url);
       // @ts-ignore
       const loadingTask = pdfjs.getDocument({ data: pdfData });
       const pdf = await loadingTask.promise;
-
-      // Render the first page of the PDF
       const page = await pdf.getPage(1);
       const canvas = pdfCanvasRef.current;
       const context = canvas?.getContext('2d');
 
-      if (!context) {
-        console.error('Failed to get 2D context from canvas');
-        return;
-      }
+      if (!context) return;
 
-      const viewport = page.getViewport({ scale: 1.5 }); // Adjust the scale for larger/smaller rendering
-
-      // Set canvas dimensions to match the PDF page
+      const viewport = page.getViewport({ scale });
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      setCanvasDimensions({ width: viewport.width, height: viewport.height });
-      // Render PDF page into the canvas context
-      const renderContext = {
+      
+      await page.render({
         canvasContext: context,
         viewport,
-      };
+      }).promise;
 
-      const renderTask = page.render(renderContext);
-      await renderTask.promise;
-
-      // // Convert the rendered PDF on the canvas to an image URL
-      // const imageUrl = canvas.toDataURL('image/png');
-      // setImageDataUrl(imageUrl); // Save the image URL in the state
-      // console.log('PDF rendered and converted to image');
+      setCanvasDimensions({ width: viewport.width, height: viewport.height });
+      setLocalCanvasDimensions({ width: viewport.width, height: viewport.height });
+      setPdfLoaded(true);
     } catch (error) {
-      console.error('Error rendering PDF:', error);
+      console.error('PDF render error:', error);
+      setPdfLoaded(false);
     }
-    setPdfLoaded(true); // Set the PDF as loaded
-  };
+  }, [pdfjs, plan, scale, setCanvasDimensions, setPdfLoaded]);
 
-  // Trigger the rendering when dependencies are ready
+  // Debounced render with cleanup
+  const debouncedRender = useMemo(
+    () => debounce(() => renderPdf(), 150),
+    [renderPdf]
+  );
+
   useEffect(() => {
-    if (pdfjs && pdfCanvasRef.current && plan) {
-      renderPdf();
-    }
-  }, [pdfjs, pdfCanvasRef, plan]);
+    debouncedRender();
+    return () => debouncedRender.cancel();
+  }, [debouncedRender]);
 
   return (
-    <div id="pdf-container" style={{ height: '100%' }}>
-      {/* {imageDataUrl && (
-        <img
-          src={imageDataUrl}
-          alt="Rendered PDF Page"
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }} // Ensure the image fills the canvas
-        />
-      )} */}
+    <div 
+    // id="pdf-container" style={{ height: '100%' }}>
+    id="pdf-container" 
+    style={{ 
+      height: localCanvasDimensions.height,
+      width: localCanvasDimensions.width,
+      position: 'relative'
+    }}
+    >
       <canvas
         ref={pdfCanvasRef}
-        // style={{ display: 'none' }} // Hide the canvas, since we're rendering the image
       />
     </div>
   );

@@ -29,6 +29,7 @@
     "dropbox": "^10.34.0",
     "eslint": "8.47.0",
     "eslint-config-next": "13.4.17",
+    "lodash": "^4.17.21",
     "next": "13.4.17",
     "next-auth": "^4.24.8",
     "pdfjs": "^2.5.2",
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^5.7.8",
+    "@types/lodash": "^4.17.14",
     "@types/pdfjs-dist": "^2.10.378",
     "@types/uuid": "^10.0.0"
   }

@@ -8,6 +8,7 @@ const PdfView = () => {
   const router = useRouter();
   const { pdfId } = router.query as { pdfId: string };
   const setPdfLoadedState = useSiteStore((state) => state.setPdfLoaded);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   useEffect(() => {
     if (pdfId) {
@@ -55,9 +56,13 @@ const PdfView = () => {
 
           }}>
           <div style={{ width: '100%', height: '100%', zIndex: 0, position: 'absolute' }}>
-            <PdfViewer pdfId={pdfId} />
+            <PdfViewer pdfId={pdfId} scale={zoomLevel} />
           </div>
-          <CanvasComponent pdfId={pdfId} />
+          <CanvasComponent 
+            pdfId={pdfId} 
+            zoomLevel={zoomLevel}
+            onZoomChange={setZoomLevel}
+          />
         </div>
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'grey', zIndex: 9999 }}>
           <button

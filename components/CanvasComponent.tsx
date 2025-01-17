@@ -24,7 +24,7 @@ type Image = {
 };
 
 // @ts-ignore
-function CanvasComponent({pdfId}) {
+function CanvasComponent({pdfId, zoomLevel, onZoomChange}) {
   const [selectedPoint, setSelectedPoint] = useState(null);  // For showing selected pin in popup
   const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
   const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
@@ -219,7 +219,28 @@ const findClosestPin = useCallback(
   return (
     <>
       {/* Canvas for rendering pins */}
-      <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:100 }}>
+      <div style={{ 
+        position: 'relative', 
+        width: '100%', 
+        height: '100%', 
+        zIndex: 100,
+        touchAction: movablePoint ? 'none' : 'auto'
+      }}>
+        <input
+          type="range"
+          min="0.5"
+          max="3"
+          step="0.1"
+          value={zoomLevel}
+          onChange={(e) => onZoomChange(parseFloat(e.target.value))}
+          style={{
+            position: 'absolute',
+            bottom: 20,
+            right: 20,
+            width: 150,
+            zIndex: 1000
+          }}
+        />
         <canvas
           ref={canvasRef}
           // @ts-ignore
@@ -227,7 +248,12 @@ const findClosestPin = useCallback(
           // @ts-ignore
           height={canvasDimensions.height}
           className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
-          // onPointerDown={handlePointerDown}
+          style={{ 
+            touchAction: movablePoint ? 'none' : 'auto',
+            transform: `scale(${zoomLevel})`,
+            transformOrigin: 'center'
+          }}
+          // @ts-ignore
           onDoubleClick={handleDoublePointerDown}
           onPointerDown={handlePointerDown}
           onPointerLeave={handlePointerUp}
