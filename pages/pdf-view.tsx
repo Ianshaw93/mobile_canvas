@@ -19,6 +19,7 @@ const PdfView = () => {
     router.push('/');
   };
   const [menuOffset, setMenuOffset] = useState(0);
+  const [scrollY, setScrollY] = useState(0);
 
   // Function to update menu offset based on viewport height
   const updateMenuOffset = () => {
@@ -43,6 +44,21 @@ const PdfView = () => {
       window.removeEventListener('resize', updateMenuOffset);
       window.removeEventListener('orientationchange', updateMenuOffset);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+
+    // Set initial value
+    setScrollY(window.scrollY);
+
+    // Add scroll listener
+    window.addEventListener('scroll', handleScroll);
+
+    // Cleanup
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   return (
@@ -75,7 +91,7 @@ const PdfView = () => {
         // className="sticky-bottom-menu"
         style={{
           position: 'absolute',
-          top: `${menuOffset}px`, // Dynamic offset based on viewport height
+          top: `${menuOffset}px`,
           left: 0,
           width: '100%',
           height: '60px',
@@ -85,7 +101,7 @@ const PdfView = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          transform: `translateY(${window.scrollY}px)`, // Follow scroll position
+          transform: `translateY(${scrollY}px)`,
         }}
           
       >

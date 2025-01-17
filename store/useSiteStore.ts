@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { Capacitor } from '@capacitor/core';
-import { Network } from '@capacitor/network'; // Import Network Plugin
-import { sendData } from '@/components/ApiCalls';
+// import { Capacitor } from '@capacitor/core';
+// import { Network } from '@capacitor/network'; // Import Network Plugin
+// import { sendData } from '@/components/ApiCalls';
 import { requestFileSystemPermissions, requestCameraPermissions } from '@/components/requestiPermission';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
@@ -447,3 +447,10 @@ useSiteStore.getState().requestStoragePermissions();
 // });
 
 export default useSiteStore;
+
+// Add a separate initialization function
+export const initializeStore = async () => {
+  await useSiteStore.getState().checkAndRequestPermissions();
+  await useSiteStore.getState().loadPlans();
+  await useSiteStore.getState().requestStoragePermissions();
+};
