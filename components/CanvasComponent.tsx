@@ -55,9 +55,17 @@ function CanvasComponent({pdfId}) {
     // @ts-ignore
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    points.forEach((point) => {
+    points.forEach((point, index) => {
+      // Draw the pin
       context.fillStyle = elementConfig["pin"];
-      context.fillRect(point.x - 5, point.y - 5, 10, 10); // Render pins as small blue squares
+      context.fillRect(point.x - 5, point.y - 5, 10, 10);
+      
+      // Draw the number
+      context.fillStyle = 'white';
+      context.font = '12px Arial';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText((index + 1).toString(), point.x, point.y);
     });
   }, [points]);
   // Handle pointer down to add or select a pin
