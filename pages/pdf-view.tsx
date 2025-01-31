@@ -18,6 +18,11 @@ const PdfView = () => {
   const handleBackClick = () => {
     router.push('/');
   };
+
+  const handlePinMenuClick = () => {
+    router.push(`/pdf-view/${pdfId}/pins`);
+  };
+
   const [menuOffset, setMenuOffset] = useState(0);
   const [scrollY, setScrollY] = useState(0);
 
@@ -76,6 +81,13 @@ const PdfView = () => {
           <CanvasComponent pdfId={pdfId} />
         </div>
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'grey', zIndex: 9999 }}>
+        <button
+            onClick={handlePinMenuClick}
+            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+            type="button"
+          >
+            Pin Menu
+          </button>
           <button
             onClick={handleBackClick}
             className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
