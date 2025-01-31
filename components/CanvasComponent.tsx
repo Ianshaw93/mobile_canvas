@@ -138,7 +138,7 @@ function CanvasComponent({pdfId}) {
   const handleCanvasClick = useCallback((event) => {
     const now = Date.now();
     const timeSinceLastClick = now - lastClickTime;
-    const doubleClickDelay = 200;
+    const doubleClickDelay = 500;
 
     // If this was from a touch event and we detected movement, ignore it
     if (event.sourceCapabilities?.firesTouchEvents && isMovingRef.current) {
@@ -182,6 +182,7 @@ function CanvasComponent({pdfId}) {
   // @ts-ignore
   const handleTouchMove = useCallback((event) => {
     const touch = event.touches[0];
+    
     const deltaX = touch.clientX - startPosRef.current.x;
     const deltaY = touch.clientY - startPosRef.current.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);

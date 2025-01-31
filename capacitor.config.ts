@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
     allowNavigation: ["*"],
     cleartext: true
   },
-    // "server": {
+  //   "server": {
   //   "androidScheme": "http",
   //   "allowNavigation": ["*"],
   // iosScheme: 'myapp',

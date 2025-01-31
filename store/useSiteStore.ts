@@ -3,7 +3,12 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 // import { Capacitor } from '@capacitor/core';
 // import { Network } from '@capacitor/network'; // Import Network Plugin
 // import { sendData } from '@/components/ApiCalls';
-import { requestFileSystemPermissions, requestCameraPermissions } from '@/components/requestiPermission';
+import { 
+  checkCameraPermissions, 
+  requestCameraPermissions, 
+  requestFileSystemPermissions, 
+  requestAllPermissions 
+} from '@/components/requestiPermission';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
@@ -413,22 +418,22 @@ const useSiteStore = create<State>((set, get) => ({
   },
   checkAndRequestPermissions: async () => {
     try {
-      const permissionStatus = await requestFileSystemPermissions()
-      const camerPermissionStatus = await requestCameraPermissions()
-      console.log('File system permission status:', permissionStatus);
-      console.log('Camera permission status:', camerPermissionStatus);
+      const { camera, filesystem } = await requestAllPermissions();
       
       set(state => ({
         permissions: {
-          camera: camerPermissionStatus === 'granted',
-          storage: !!permissionStatus
+          camera,
+          storage: filesystem
         }
       }));
-
-      console.log('Permissions status:', permissionStatus);
-
     } catch (error) {
-      console.error('Error requesting permissions:', error);
+      console.error('Error handling permissions:', error);
+      set(state => ({
+        permissions: {
+          camera: false,
+          storage: false
+        }
+      }));
     }
   }
 }));
