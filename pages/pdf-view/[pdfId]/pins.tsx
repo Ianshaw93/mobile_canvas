@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '@/store/useSiteStore';
+import { usePDF } from '@/hooks/usePDF';
 
 const PinListPage = () => {
   const router = useRouter();
@@ -8,6 +9,57 @@ const PinListPage = () => {
   const getPlan = useSiteStore((state) => state.getPlan);
   const plan = getPlan(pdfId);
   const points = plan?.points || [];
+  const pdfjs = usePDF();
+  const [pdfImage, setPdfImage] = useState<string | null>(null);
+
+  // Convert PDF to PNG once
+  useEffect(() => {
+    const convertPdfToImage = async () => {
+      if (!pdfjs || !plan?.url) return;
+
+      try {
+        // Create temporary canvas for PDF rendering
+        const tempCanvas = document.createElement('canvas');
+        const ctx = tempCanvas.getContext('2d', { alpha: false });
+        
+        // Load PDF
+        const base64Data = plan.url.split(',')[1];
+        const binaryString = window.atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const pdfData = bytes.buffer;
+        // @ts-ignore
+        const loadingTask = pdfjs.getDocument({ data: pdfData });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+
+        // Set canvas size to a reasonable resolution
+        const viewport = page.getViewport({ scale: 0.5 }); // Lower scale for memory
+        tempCanvas.width = viewport.width;
+        tempCanvas.height = viewport.height;
+
+        // Render PDF to canvas
+        await page.render({
+          canvasContext: ctx!,
+          viewport,
+          background: 'white'
+        }).promise;
+
+        // Convert canvas to PNG
+        const pngUrl = tempCanvas.toDataURL('image/png', 0.5); // Lower quality for memory
+        setPdfImage(pngUrl);
+
+        // Clean up
+        tempCanvas.remove();
+      } catch (error) {
+        console.error('Error converting PDF to image:', error);
+      }
+    };
+
+    convertPdfToImage();
+  }, [pdfjs, plan]);
 
   const handleBack = () => {
     router.back();
@@ -53,7 +105,7 @@ const PinListPage = () => {
                         className="w-full h-full"
                         style={{
                           backgroundImage: `url(${plan.thumbnail})`,
-                          backgroundSize: 'cover',
+                          backgroundSize: 'contain',
                           backgroundRepeat: 'no-repeat',
                           backgroundPosition: 'center',
                         }}
@@ -65,8 +117,8 @@ const PinListPage = () => {
                         style={{ 
                           width: '12px', 
                           height: '12px',
-                          left: `${(point.x / plan.dimensions.width) * 96}px`,
-                          top: `${(point.y / plan.dimensions.height) * 96}px`,
+                          left: `${(point.x / plan.dimensions.width) * 100}%`,
+                          top: `${(point.y / plan.dimensions.height) * 100}%`,
                           transform: 'translate(-50%, -100%)',
                         }}
                       />
