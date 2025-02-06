@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '@/store/useSiteStore';
 
@@ -14,7 +14,10 @@ const PinListPage = () => {
   };
 
   const handlePinClick = (pinId: string) => {
-    router.push(`/pdf-view/${pdfId}/pins/${pinId}`);
+    console.log('Navigating to pin:', pinId);
+    router.push({
+      pathname: `/pdf-view/${pdfId}/pins/${pinId}`,
+    });
   };
 
   return (
@@ -36,15 +39,47 @@ const PinListPage = () => {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow">
           {points.map((point, index) => (
-            <div 
+            <button 
               key={point.id}
-              className="border-b border-gray-200 last:border-0 cursor-pointer"
-              onClick={() => handlePinClick(point.id)}
+              onClick={() => router.push(`/pdf-view/${pdfId}/pins/${point.id}`)}
+              className="w-full text-left border-b border-gray-200 last:border-0 hover:bg-gray-50"
             >
-              <div className="p-4 hover:bg-gray-50 flex items-start space-x-4">
+              <div className="p-4 flex items-start space-x-4">
+                {/* Pin Preview */}
+                <div className="w-24 h-24 flex-shrink-0 relative overflow-hidden rounded-lg shadow-md">
+                  {plan?.thumbnail && (
+                    <>
+                      <div 
+                        className="w-full h-full"
+                        style={{
+                          backgroundImage: `url(${plan.thumbnail})`,
+                          backgroundSize: 'cover',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'center',
+                        }}
+                      />
+                      <img 
+                        src="/siteright_pin.png" 
+                        alt="Pin"
+                        className="absolute"
+                        style={{ 
+                          width: '12px', 
+                          height: '12px',
+                          left: `${(point.x / plan.dimensions.width) * 96}px`,
+                          top: `${(point.y / plan.dimensions.height) * 96}px`,
+                          transform: 'translate(-50%, -100%)',
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* Pin Number */}
                 <div className="w-10 h-10 flex-shrink-0 bg-blue-100 rounded-full flex items-center justify-center">
                   <span className="font-medium">{index + 1}</span>
                 </div>
+
+                {/* Pin Details */}
                 <div className="flex-grow">
                   <div className="flex justify-between items-start">
                     <div>
@@ -69,22 +104,9 @@ const PinListPage = () => {
                       </div>
                     )}
                   </div>
-                  {/* Optional: Show image thumbnails */}
-                  {point.images.length > 0 && (
-                    <div className="mt-3 flex space-x-2">
-                      {point.images.map((image) => (
-                        <div 
-                          key={image.key}
-                          className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden"
-                        >
-                          {/* Add image component here */}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

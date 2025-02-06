@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '@/store/useSiteStore';
 import CameraLogic from '@/components/CameraLogic';
+import PinPreview from '@/components/PinPreview';
 
 const PinDetailPage = () => {
   const router = useRouter();
@@ -52,6 +53,18 @@ const PinDetailPage = () => {
       {/* Pin Details */}
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow p-6">
+          {/* Pin Location Preview */}
+          <div className="mb-6">
+            <h2 className="text-lg font-medium mb-2">Pin Location</h2>
+            <PinPreview 
+              pdfId={pdfId} 
+              point={selectedPoint} 
+              size={300}
+              zoomLevel={2}
+            />
+          </div>
+
+          {/* Images Section */}
           <div className="mb-6">
             <h2 className="text-lg font-medium mb-2">Images</h2>
             <CameraLogic selectedPoint={selectedPoint} planId={pdfId} />
