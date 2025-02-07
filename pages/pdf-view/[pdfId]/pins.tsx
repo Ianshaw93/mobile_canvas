@@ -76,6 +76,7 @@ const PinListPage = () => {
       pathname: `/pdf-view/${pdfId}/pins/${pinId}`,
     });
   };
+  console.log('Pins in state:', JSON.stringify(points));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -96,7 +97,7 @@ const PinListPage = () => {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow">
           {points.map((point, index) => {
-            console.log(`Point ${index + 1}:`, point);
+            console.log(`Point ${index + 1}:`, JSON.stringify(point));
             console.log(`Coordinates: x=${point.x}, y=${point.y}`);
             console.log(`Plan dimensions: width=${plan.dimensions.width}, height=${plan.dimensions.height}`);
             return (
@@ -108,11 +109,13 @@ const PinListPage = () => {
                 <div className="p-4 flex items-start space-x-4">
                   {/* Pin Preview */}
                   <div className="w-24 h-24 flex-shrink-0 relative overflow-hidden rounded-lg shadow-md">
+                    {/* @ts-ignore */}
                     {plan?.thumbnail && (
                       <>
                         <div 
                           className="w-full h-full"
                           style={{
+                            // @ts-ignore
                             backgroundImage: `url(${plan.thumbnail})`,
                             backgroundSize: 'contain',
                             backgroundRepeat: 'no-repeat',

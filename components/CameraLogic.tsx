@@ -209,10 +209,35 @@ const CameraLogic= ({selectedPoint, planId}) => {
       addCommentToPin(planId, selectedPoint.id, comment);
       }
     };
+
+    const addCommentToImage = useSiteStore((state) => state.addCommentToImage);
+    const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
+
+    // Add this function to handle image comment changes
+    const handleImageCommentChange = (imageKey: string, newComment: string) => {
+      setImageComments(prev => ({ ...prev, [imageKey]: newComment }));
+    };
+
+    // Add this function to handle image comment blur
+    const handleImageCommentBlur = (imageKey: string) => {
+      const comment = imageComments[imageKey];
+      if (comment !== undefined) {
+        addCommentToImage(planId, selectedPoint.id, imageKey, comment);
+      }
+    };
+
     useEffect(() => {
       if (selectedPoint) {
         loadFileData(selectedPoint.images);
-        setComment(selectedPoint.comment || ''); // Load the comment for the selected point
+        setComment(selectedPoint.comment || '');
+        // Load image comments
+        const comments: { [key: string]: string } = {};
+        selectedPoint.images.forEach(img => {
+          if (img.comment) {
+            comments[img.key] = img.comment;
+          }
+        });
+        setImageComments(comments);
       }
     }, [selectedPoint]);  
     return (
@@ -226,7 +251,16 @@ const CameraLogic= ({selectedPoint, planId}) => {
           const src = img.data || img;
           console.log(`Image src for image ${index}: `, src);
           return (
-            <img key={index} src={src} alt={`Image ${index}`} width={100}/>
+            <div key={index} className="mb-4">
+              <img src={src} alt={`Image ${index}`} width={100}/>
+              <textarea
+                placeholder={`Comment for image ${index + 1}...`}
+                value={imageComments[img.key] || ''}
+                onChange={(e) => handleImageCommentChange(img.key, e.target.value)}
+                onBlur={() => handleImageCommentBlur(img.key)}
+                className="mt-2 w-full"
+              />
+            </div>
           )
         })}
 
@@ -239,6 +273,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
             value={comment}
             onChange={handleCommentChange}
             onBlur={handleCommentBlur}
+            className="mt-4 w-full"
           />
         </div>
       </div>

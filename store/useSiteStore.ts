@@ -30,6 +30,7 @@ type Image = {
   pointIndex: number;
   projectId: string;
   planId: string;
+  comment?: string; // Add comment field for images
   // data: string; // Base64 string of the image 
 };
 
@@ -97,6 +98,7 @@ type State = {
   requestStoragePermissions: () => Promise<void>;
   permissions: PermissionStatus;
   checkAndRequestPermissions: () => Promise<void>;
+  addCommentToImage: (planId: string, pointId: string, imageKey: string, comment: string) => void;
 };
 
 // Helper function to save plans to the filesystem
@@ -435,6 +437,27 @@ const useSiteStore = create<State>((set, get) => ({
         }
       }));
     }
+  },
+  addCommentToImage: (planId, pointId, imageKey, comment) => {
+    set((state) => {
+      const updatedPlans = state.plans.map((plan) => {
+        if (plan.id === planId) {
+          const updatedPoints = plan.points.map((point) => {
+            if (point.id === pointId) {
+              const updatedImages = point.images.map((image) =>
+                image.key === imageKey ? { ...image, comment } : image
+              );
+              return { ...point, images: updatedImages };
+            }
+            return point;
+          });
+          return { ...plan, points: updatedPoints };
+        }
+        return plan;
+      });
+      savePlansToFilesystem(updatedPlans);
+      return { plans: updatedPlans };
+    });
   }
 }));
 
