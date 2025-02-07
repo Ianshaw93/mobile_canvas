@@ -31,6 +31,7 @@ type Image = {
   projectId: string;
   planId: string;
   comment?: string; // Add comment field for images
+  url: string;  // Base64 string of the image
   // data: string; // Base64 string of the image 
 };
 

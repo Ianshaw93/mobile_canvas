@@ -39,13 +39,10 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const plan = useSiteStore((state) => state.plans.find(plan => plan.id === planId));
   const points = plan ? plan.points : [];
   const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
+  const deleteImageFromPin = useSiteStore((state) => state.deleteImageFromPin);
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
-  const [comment, setComment] = useState<string>(''); // State variable for comment
-  // const point = points.find((p) => p.id === selectedPoint);
-  console.log("plan: ", plan)
-  console.log("points: ", points)
-  // console.log("selectedPoint: ", selectedPoint)
-  // console.log("point: ", point)
+  const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
+  const [comment, setComment] = useState<string>('');
   // @ts-ignore
   const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
   console.log("imageArray@top: ", imageArray)
@@ -156,7 +153,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
         // Find the index of the point
         const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
         await saveImageToFilesystem(base64Data.split(',')[1], fileName);
-  
+
         // Transform the Photo object into the Image type
         const transformedImage: Image = {
           key: fileName,
@@ -173,7 +170,12 @@ const CameraLogic= ({selectedPoint, planId}) => {
   
         // Add the image to the pin
         addImageToPin(planId, selectedPoint.id, transformedImage);
-        // addCommentToPin(planId, selectedPoint.id, comment);
+
+        // Initialize empty comment for the new image
+        setImageComments(prev => ({
+          ...prev,
+          [fileName]: ''
+        }));
       }
     };
   
@@ -211,7 +213,6 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     const addCommentToImage = useSiteStore((state) => state.addCommentToImage);
-    const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
 
     // Add this function to handle image comment changes
     const handleImageCommentChange = (imageKey: string, newComment: string) => {
@@ -223,6 +224,22 @@ const CameraLogic= ({selectedPoint, planId}) => {
       const comment = imageComments[imageKey];
       if (comment !== undefined) {
         addCommentToImage(planId, selectedPoint.id, imageKey, comment);
+      }
+    };
+
+    // Add delete handler
+    const handleDeleteImage = (imageKey: string, index: number) => {
+      if (window.confirm('Are you sure you want to delete this image?')) {
+        // Update both local state arrays
+        setImageArray(prev => prev.filter((_, i) => i !== index));
+        setImageComments(prev => {
+          const newComments = { ...prev };
+          delete newComments[imageKey];
+          return newComments;
+        });
+        
+        // Update Zustand store
+        deleteImageFromPin(planId, selectedPoint.id, imageKey);
       }
     };
 
@@ -242,38 +259,43 @@ const CameraLogic= ({selectedPoint, planId}) => {
     }, [selectedPoint]);  
     return (
       <div>
-        <button onClick={takePicture}>Take Picture</button>
+        <button onClick={takePicture} className="mb-4 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2">
+          Take Picture
+        </button>
         <div>
-        {imageArray.map((img, index) => {
-          console.log(`Rendering image ${index}: `, img);
-          // const src = img.data || `capacitor://localhost/_capacitor_file_/${Directory.Data}/${img.url}`;
-          // @ts-ignore
-          const src = img.data || img;
-          console.log(`Image src for image ${index}: `, src);
-          return (
-            <div key={index} className="mb-4">
-              <img src={src} alt={`Image ${index}`} width={100}/>
-              <textarea
-                placeholder={`Comment for image ${index + 1}...`}
-                value={imageComments[img.key] || ''}
-                onChange={(e) => handleImageCommentChange(img.key, e.target.value)}
-                onBlur={() => handleImageCommentBlur(img.key)}
-                className="mt-2 w-full"
-              />
-            </div>
-          )
-        })}
-
+          {imageArray.map((img, index) => {
+            const imageKey = selectedPoint.images[index].key;
+            const src = img.data || img;
+            return (
+              <div key={imageKey} className="mb-6 p-4 border rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="text-lg font-medium">Image {index + 1}</h3>
+                  <button
+                    onClick={() => handleDeleteImage(imageKey, index)}
+                    className="text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-3 py-1"
+                  >
+                    Delete Image
+                  </button>
+                </div>
+                <img src={src} alt={`Image ${index + 1}`} className="max-w-sm max-h-sm mb-2" />
+                <textarea
+                  placeholder={`Comment for image ${index + 1}...`}
+                  value={imageComments[imageKey] || ''}
+                  onChange={(e) => handleImageCommentChange(imageKey, e.target.value)}
+                  onBlur={() => handleImageCommentBlur(imageKey)}
+                  className="mt-2 w-full p-2 border rounded"
+                />
+              </div>
+            );
+          })}
           
-          {/* // {imageArray.map((img, index) => (
-          //   <img key={index} src={`${Directory.Data}/${img.url || img}`} alt={`Image ${index}`} />
-          // ))} */}
+          {/* Pin comment */}
           <textarea
             placeholder="Write a comment..."
             value={comment}
             onChange={handleCommentChange}
             onBlur={handleCommentBlur}
-            className="mt-4 w-full"
+            className="mt-4 w-full p-2 border rounded"
           />
         </div>
       </div>
