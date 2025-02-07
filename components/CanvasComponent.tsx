@@ -32,7 +32,7 @@ type Image = {
 
 // @ts-ignore
 function CanvasComponent({pdfId}) {
-  const [selectedPoint, setSelectedPoint] = useState(null);  // For showing selected pin in popup
+  const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);  // For showing selected pin in popup
   const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
   const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
   const canvasRef = useRef(null);
@@ -164,8 +164,13 @@ function CanvasComponent({pdfId}) {
         const newPoint = { id: pointId, x, y, images: [], comment: '' };
         addPoint(currentPlan.id, newPoint);
         renderPoints();
+        // open popup
+        // set selected point to new point
+        setSelectedPoint(newPoint);
+        setShowPinPopup(true);
       }
       setLastClickTime(0); // Reset timer
+
     } else {
       // First click
       setLastClickTime(now);
