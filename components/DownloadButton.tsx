@@ -84,7 +84,11 @@ const downloadCSV = async (csv: string, filename: string) => {
 };
 
 const DownloadStateButton = () => {
-  const plans = useSiteStore((state) => state.plans);
+  const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
+  const selectedProject = useSiteStore((state) => 
+    state.projects.find(p => p.id === state.selectedProjectId)
+  );
+  const plans = selectedProject?.plans || [];
   // sendData()
 
   const handleDownload = () => {

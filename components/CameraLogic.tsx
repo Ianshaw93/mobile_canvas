@@ -36,17 +36,23 @@ const CameraLogic= ({selectedPoint, planId}) => {
   // how to have Platform check?
   // Capacitor.getPlatform()
   const addImageToPin = useSiteStore((state) => state.addImageToPin);
-  const plan = useSiteStore((state) => state.plans.find(plan => plan.id === planId));
+  const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
+  const selectedProject = useSiteStore((state) => 
+    state.projects.find(p => p.id === state.selectedProjectId)
+  );
+  const plan = selectedProject?.plans.find(plan => plan.id === planId);
   const points = plan ? plan.points : [];
   const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
   const deleteImageFromPin = useSiteStore((state) => state.deleteImageFromPin);
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
+  const updateProjectImages = useSiteStore((state) => state.updateProjectImages);
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
   // @ts-ignore
   const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
   console.log("imageArray@top: ", imageArray)
 
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const platform = Capacitor.getPlatform();
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
@@ -228,18 +234,20 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     // Add delete handler
-    const handleDeleteImage = (imageKey: string, index: number) => {
-      if (window.confirm('Are you sure you want to delete this image?')) {
-        // Update both local state arrays
-        setImageArray(prev => prev.filter((_, i) => i !== index));
-        setImageComments(prev => {
-          const newComments = { ...prev };
-          delete newComments[imageKey];
-          return newComments;
-        });
-        
-        // Update Zustand store
-        deleteImageFromPin(planId, selectedPoint.id, imageKey);
+    const handleDeleteImage = async (imageKey: string, index: number) => {
+      if (window.confirm('Are you sure you want to delete this image?')){
+
+        try {
+          // Remove from local UI state
+          const newImageArray = imageArray.filter((_, i) => i !== index);
+          setImageArray(newImageArray);
+
+          // Let the store handle file deletion and state updates
+          await deleteImageFromPin(planId, selectedPoint.id, imageKey);
+
+        } catch (error) {
+          console.error('Error deleting image:', error);
+        }
       }
     };
 
@@ -249,6 +257,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
         setComment(selectedPoint.comment || '');
         // Load image comments
         const comments: { [key: string]: string } = {};
+        // @ts-ignore
         selectedPoint.images.forEach(img => {
           if (img.comment) {
             comments[img.key] = img.comment;
@@ -257,6 +266,34 @@ const CameraLogic= ({selectedPoint, planId}) => {
         setImageComments(comments);
       }
     }, [selectedPoint]);  
+
+    const handlePhotoTaken = async (photo: Photo) => {
+      const base64Data = await convertPhotoToBase64(photo);
+      // @ts-ignore
+      const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
+      
+      // Create a copy of the current imageArray
+      const updatedImageArray = [...imageArray];
+      
+      // Add the new image
+      updatedImageArray.push(base64Data);
+      
+      // Update state with the new array
+      setImageArray(updatedImageArray);
+      
+      // Save to filesystem
+      await saveImageToFilesystem(base64Data.split(',')[1], fileName);
+      
+      // Update state via Zustand
+      // @ts-ignore
+      updateProjectImages(selectedProjectId, base64Data);
+      
+      // Force a re-render
+      setRefreshKey(prev => prev + 1);
+    };
+
+    
+
     return (
       <div>
         <button onClick={takePicture} className="mb-4 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2">
@@ -264,7 +301,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
         </button>
         <div>
           {imageArray.map((img, index) => {
-            const imageKey = selectedPoint.images[index].key;
+            const imageKey = selectedPoint?.images?.[index]?.key || `image-${index}`;
+            // @ts-ignore 
             const src = img.data || img;
             return (
               <div key={imageKey} className="mb-6 p-4 border rounded-lg">

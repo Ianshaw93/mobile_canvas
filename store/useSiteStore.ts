@@ -113,6 +113,7 @@ type State = {
   deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => void;
   addProject: (name: string) => void;
   getProject: (id: string) => Project | undefined;
+  updateProjectImages: (projectId: string, newImage: string) => void;
 };
 
 // Helper function to save plans to the filesystem
@@ -500,30 +501,61 @@ const useSiteStore = create<State>((set, get) => ({
       return { projects: updatedProjects };
     });
   },
-  deleteImageFromPin: (planId, pointId, imageKey) => {
-    set((state) => {
-      const updatedProjects = state.projects.map((project) => {
-        const updatedPlans = project.plans.map((plan) => {
-          if (plan.id === planId) {
-            const updatedPoints = plan.points.map((point) => {
-              if (point.id === pointId) {
-                return {
-                  ...point,
-                  images: point.images.filter(img => img.key !== imageKey)
-                };
-              }
-              return point;
-            });
-            return { ...plan, points: updatedPoints };
-          }
-          return plan;
-        });
-        return { ...project, plans: updatedPlans };
+  deleteImageFromPin: async (planId: string, pointId: string, imageKey: string) => {
+    try {
+      // Delete the actual file
+      await Filesystem.deleteFile({
+        path: imageKey,
+        directory: Directory.Data
       });
-      savePlansToFilesystem(updatedProjects);
-      return { projects: state.projects };
-    });
-  }
+
+      // Update the state
+      set((state) => {
+        const newProjects = state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan => {
+            if (plan.id === planId) {
+              return {
+                ...plan,
+                points: plan.points.map(point => {
+                  if (point.id === pointId) {
+                    return {
+                      ...point,
+                      images: point.images.filter(img => img.key !== imageKey)
+                    };
+                  }
+                  return point;
+                })
+              };
+            }
+            return plan;
+          })
+        }));
+
+        // Save updated state to filesystem
+        savePlansToFilesystem(newProjects);
+        
+        return { projects: newProjects };
+      });
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      throw error;
+    }
+  },
+  updateProjectImages: (projectId: string, newImage: string) => 
+    set((state) => {
+      const updatedProjects = state.projects.map(p => {
+        if (p.id === projectId) {
+          return {
+            ...p,
+            images: [...p.images, newImage]
+          };
+        }
+        return p;
+      });
+      savePlansToFilesystem(updatedProjects); // Save to storage
+      return { projects: updatedProjects };
+    }),
 }));
 
 // Initialize permissions check when store is created
