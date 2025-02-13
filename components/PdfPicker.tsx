@@ -61,6 +61,7 @@ const PdfPicker = () => {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const updatePlanName = useSiteStore((state) => state.updatePlanName);
+  const [showRenameConfirm, setShowRenameConfirm] = useState<string | null>(null); // stores planId of plan being renamed
   console.log("plans: ", plans)
 
   useEffect(() => {
@@ -155,6 +156,14 @@ const PdfPicker = () => {
         pdfId: planId
       },  // Passing Base64 URL here
     });
+  };
+
+  const handleNameUpdate = (planId: string) => {
+    if (editingName.trim() && selectedProjectId) {
+      updatePlanName(selectedProjectId, planId, editingName.trim());
+      setEditingPlanId(null);
+      setEditingName('');
+    }
   };
 
   return (
@@ -253,19 +262,84 @@ const PdfPicker = () => {
 
       <div>
         {plans.map((plan, index) => (
-          console.log("plan: ", plan),
           <div key={index} className="mb-4">
-            <p>{`PDF ${index + 1}`}</p>
+            {editingPlanId === plan.id ? (
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  className="p-1 border rounded"
+                  placeholder="Enter new name"
+                  autoFocus
+                />
+                <button
+                  onClick={() => handleNameUpdate(plan.id)}
+                  className="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingPlanId(null);
+                    setEditingName('');
+                  }}
+                  className="px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-2">
+                <p>{plan.name}</p>
+                <button
+                  onClick={() => setShowRenameConfirm(plan.id)}
+                  className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Rename
+                </button>
+              </div>
+            )}
             <img
               // @ts-ignore
               src={plan.thumbnail}
-              alt={`PDF ${index + 1}`}
+              alt={plan.name}
               onClick={() => viewPdf(plan.url, plan.id)}
               className="max-w-sm cursor-pointer"
             />
           </div>
         ))}
       </div>
+
+      {/* Rename Confirmation Modal */}
+      {showRenameConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Are you sure you want to rename this PDF?</h3>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowRenameConfirm(null)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const plan = plans.find(p => p.id === showRenameConfirm);
+                  if (plan) {
+                    setEditingPlanId(plan.id);
+                    setEditingName(plan.name || '');
+                  }
+                  setShowRenameConfirm(null);
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Yes, Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
