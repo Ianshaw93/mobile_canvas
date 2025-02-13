@@ -550,6 +550,7 @@ const useSiteStore = create<State>((set, get) => ({
         if (p.id === projectId) {
           return {
             ...p,
+            // @ts-ignore
             images: [...p.images, newImage]
           };
         }

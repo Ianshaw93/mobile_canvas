@@ -45,6 +45,7 @@ const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div 
           className="bg-white p-4 grid-cols-1 align-items-center rounded-lg shadow-lg relative" 
+          // @ts-ignore
           style={popupStyle}
           onClick={(e) => e.stopPropagation()}
         >

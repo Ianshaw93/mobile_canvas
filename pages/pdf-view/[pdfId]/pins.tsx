@@ -99,6 +99,7 @@ const PinListPage = () => {
           {points.map((point, index) => {
             console.log(`Point ${index + 1}:`, JSON.stringify(point));
             console.log(`Coordinates: x=${point.x}, y=${point.y}`);
+            // @ts-ignore
             console.log(`Plan dimensions: width=${plan.dimensions.width}, height=${plan.dimensions.height}`);
             return (
               <button 
@@ -129,7 +130,9 @@ const PinListPage = () => {
                           style={{ 
                             width: '12px', 
                             height: '12px',
+                            // @ts-ignore
                             left: `${(point.x / plan.dimensions.width) * 100}%`,
+                            // @ts-ignore
                             top: `${(point.y / plan.dimensions.height) * 100}%`,
                             transform: 'translate(-50%, -50%)', // Center the pin
                           }}

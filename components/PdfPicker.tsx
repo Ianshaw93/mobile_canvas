@@ -100,7 +100,6 @@ const PdfPicker = () => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
       const base64PDF = await blobToBase64(file);
-      // Use selectedProjectId instead of getFirstPlanIdOrDatetime
       const projectId = selectedProjectId;
       const planId = `${Date.now()}`;
       
@@ -282,6 +281,8 @@ const PdfPicker = () => {
       <canvas ref={pdfCanvasRef} 
       className="hidden" 
       /> */}
+
+      <canvas ref={pdfCanvasRef} className="hidden" />
 
       <div>
         {plans.map((plan, index) => (
