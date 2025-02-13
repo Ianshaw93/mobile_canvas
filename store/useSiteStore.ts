@@ -62,8 +62,18 @@ type PermissionStatus = {
   storage: boolean;
 };
 
-type State = {
+// Add new Project type
+type Project = {
+  id: string;
+  name: string;
+  createdAt: number;
   plans: Plan[];
+};
+
+type State = {
+  selectedProjectId: string | null;
+  setSelectedProjectId: (id: string | null) => void;
+  projects: Project[];
   canvasDimensions: Dimensions | {};
   offlineQueue: FileQueueItem[];
   isProcessingQueue: boolean; // Add this property to the state type
@@ -72,7 +82,7 @@ type State = {
   setUserTriggeredBackup: (triggered: boolean) => void;
   setAccessToken: (token: string) => void; // Add function to set the access token
   clearAccessToken: () => void; // Add function to clear the access token
-  addPlan: (plan: Plan) => void;
+  addPlan: (projectId: string, plan: Plan) => void;
   addPoint: (planId: string, point: Point) => void;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => void;
   deletePoint: (planId: string, pointId: string) => void;
@@ -101,39 +111,39 @@ type State = {
   checkAndRequestPermissions: () => Promise<void>;
   addCommentToImage: (planId: string, pointId: string, imageKey: string, comment: string) => void;
   deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => void;
+  addProject: (name: string) => void;
+  getProject: (id: string) => Project | undefined;
 };
 
 // Helper function to save plans to the filesystem
-const savePlansToFilesystem = async (plans: Plan[]) => {
+const savePlansToFilesystem = async (projects: Project[]) => {
   try {
-    // Request permissions first
     await requestFileSystemPermissions();
-    
     await Filesystem.writeFile({
-      path: 'plans.json',
-      data: JSON.stringify(plans),
+      path: 'projects.json',
+      data: JSON.stringify(projects),
       directory: Directory.Data,
       encoding: Encoding.UTF8,
     });
   } catch (error) {
-    console.error('***Error saving plans:', error);
+    console.error('Error saving projects:', error);
     throw error;
   }
 };
 
 // Helper function to load plans from the filesystem
-const loadPlansFromFilesystem = async (): Promise<Plan[]> => {
+const loadPlansFromFilesystem = async (): Promise<Project[]> => {
   try {
     await requestFileSystemPermissions();
     const result = await Filesystem.readFile({
-      path: 'plans.json',
+      path: 'projects.json',
       directory: Directory.Data,
       encoding: Encoding.UTF8,
     });
     // @ts-ignore
     return JSON.parse(result.data);
   } catch (error) {
-    console.error('Error loading plans from filesystem', error);
+    console.error('Error loading projects from filesystem', error);
     return [];
   }
 };
@@ -165,7 +175,9 @@ const saveImageToExternalStorage = async (imageUri: string, fileName: string): P
 };
 
 const useSiteStore = create<State>((set, get) => ({
-  plans: [],
+  selectedProjectId: null,
+  setSelectedProjectId: (id: string | null) => set({ selectedProjectId: id }),
+  projects: [], // Replace plans array
   canvasDimensions: {},
   canvasRefs: {},  // Store canvas refs in an object
   offlineQueue: [], // Initialize the offline queue
@@ -285,53 +297,83 @@ const useSiteStore = create<State>((set, get) => ({
     return get().canvasRefs[id] || null; // Return canvas ref or null if not found
   },
   getPlan: (id: string) => {
-    return get().plans.find((plan) => plan.id === id);
+    const project = get().projects.find((project) => 
+      project.plans.find((plan) => plan.id === id)
+    );
+    return project?.plans.find((plan) => plan.id === id);
   },
-  // addPlan: (newPlan) => set((state) => ({
-  //   plans: [...state.plans, newPlan],
-  // })),
-  addPlan: (plan: Plan) => {
+  addProject: (name: string) => {
     set((state) => {
-      const updatedPlans = [...state.plans, plan];
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      const newProject = {
+        id: `proj_${Date.now()}`,
+        name,
+        createdAt: Date.now(),
+        plans: []
+      };
+      const updatedProjects = [...state.projects, newProject];
+      savePlansToFilesystem(updatedProjects); // Update save function to handle projects
+      return { projects: updatedProjects };
+    });
+  },
+  getProject: (id: string) => {
+    return get().projects.find((project) => project.id === id);
+  },
+  addPlan: (projectId: string, plan: Plan) => {
+    set((state) => {
+      const updatedProjects = state.projects.map(project => {
+        if (project.id === projectId) {
+          return { ...project, plans: [...project.plans, plan] };
+        }
+        return project;
+      });
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   addPoint: (planId: string, point: Point) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) =>
-        plan.id === planId ? { ...plan, points: [...plan.points, point] } : plan
-      );
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) =>
+          plan.id === planId ? { ...plan, points: [...plan.points, point] } : plan
+        );
+        return { ...project, plans: updatedPlans };
+      });
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   changePointLocation: (planId, pointId, x, y) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.map((point) =>
-            point.id === pointId ? { ...point, x, y } : point
-          );
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) => {
+          if (plan.id === planId) {
+            const updatedPoints = plan.points.map((point) =>
+              point.id === pointId ? { ...point, x, y } : point
+            );
+            return { ...plan, points: updatedPoints };
+          }
+          return plan;
+        });
+        return { ...project, plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   deletePoint: (planId, pointId) => { 
     set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.filter((point) => point.id !== pointId);
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) => {
+          if (plan.id === planId) {
+            const updatedPoints = plan.points.filter((point) => point.id !== pointId);
+            return { ...plan, points: updatedPoints };
+          }
+          return plan;
+        });
+        return { ...project, plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   // addImageToJson: async(planId, image, imageUrl) => { 
@@ -351,70 +393,64 @@ const useSiteStore = create<State>((set, get) => ({
   // },
   addImageToPin: async(planId, pointId, image) => {
     try {
-      // Save the image to external storage
-      if (!image.key) {
-        console.error('Image key is undefined');
-        return;
-      }
-  
-      // const fileName = `${Date.now()}.jpeg`;
-      // saveImageToExternalStorage(image.key, fileName);
-  
-      // if (!savedImagePath) {
-      //   console.error('Failed to save image to external storage');
-      //   return;
-      // }
       set((state) => {
-        const updatedPlans = state.plans.map((plan) => {
-          if (plan.id === planId) {
-            const updatedPoints = plan.points.map((point) =>
-              point.id === pointId ? { ...point, images: [...point.images, image] } : point
-            );
-            return { ...plan, points: updatedPoints };
-          }
-          return plan;
+        const updatedProjects = state.projects.map((project) => {
+          const updatedPlans = project.plans.map((plan) =>
+            plan.id === planId ? {
+              ...plan,
+              points: plan.points.map((point) =>
+                point.id === pointId ? { ...point, images: [...point.images, image] } : point
+              )
+            } : plan
+          );
+          return { ...project, plans: updatedPlans };
         });
-        savePlansToFilesystem(updatedPlans);
-        return { plans: updatedPlans };
+        savePlansToFilesystem(updatedProjects);
+        return { projects: updatedProjects };
       });
-    }catch (error) {
+    } catch (error) {
       console.error('Error saving image:', error);
     }
   },
   addCommentToPin: (planId, pointId, comment) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.map((point) =>
-            point.id === pointId ? { ...point, comment: comment } : point
-          );
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) =>
+          plan.id === planId ? {
+            ...plan,
+            points: plan.points.map((point) =>
+              point.id === pointId ? { ...point, comment } : point
+            )
+          } : plan
+        );
+        return { ...project, plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   addImage: (planId: string, image: Image) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) =>
-        plan.id === planId ? { ...plan, images: [...plan.images, image] } : plan
-      );
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) =>
+          plan.id === planId ? { ...plan, images: [...plan.images, image] } : plan
+        );
+        return { ...project, plans: updatedPlans };
+      });
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   setCanvasDimensions: (dimensions: Dimensions) => {
     set({ canvasDimensions: dimensions });
   },
   loadPlans: async () => {
-    const plans = await loadPlansFromFilesystem();
-    set({ plans });
+    const projects = await loadPlansFromFilesystem();
+    set({ projects });
   },
   savePlans: async () => {
-    const { plans } = get();
-    await savePlansToFilesystem(plans);
+    const { projects } = get();
+    await savePlansToFilesystem(projects);
   },
   permissions: {
     camera: false,
@@ -442,44 +478,50 @@ const useSiteStore = create<State>((set, get) => ({
   },
   addCommentToImage: (planId, pointId, imageKey, comment) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.map((point) => {
-            if (point.id === pointId) {
-              const updatedImages = point.images.map((image) =>
-                image.key === imageKey ? { ...image, comment } : image
-              );
-              return { ...point, images: updatedImages };
-            }
-            return point;
-          });
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) => {
+          if (plan.id === planId) {
+            const updatedPoints = plan.points.map((point) => {
+              if (point.id === pointId) {
+                const updatedImages = point.images.map((image) =>
+                  image.key === imageKey ? { ...image, comment } : image
+                );
+                return { ...point, images: updatedImages };
+              }
+              return point;
+            });
+            return { ...plan, points: updatedPoints };
+          }
+          return plan;
+        });
+        return { ...project, plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
     });
   },
   deleteImageFromPin: (planId, pointId, imageKey) => {
     set((state) => {
-      const updatedPlans = state.plans.map((plan) => {
-        if (plan.id === planId) {
-          const updatedPoints = plan.points.map((point) => {
-            if (point.id === pointId) {
-              return {
-                ...point,
-                images: point.images.filter(img => img.key !== imageKey)
-              };
-            }
-            return point;
-          });
-          return { ...plan, points: updatedPoints };
-        }
-        return plan;
+      const updatedProjects = state.projects.map((project) => {
+        const updatedPlans = project.plans.map((plan) => {
+          if (plan.id === planId) {
+            const updatedPoints = plan.points.map((point) => {
+              if (point.id === pointId) {
+                return {
+                  ...point,
+                  images: point.images.filter(img => img.key !== imageKey)
+                };
+              }
+              return point;
+            });
+            return { ...plan, points: updatedPoints };
+          }
+          return plan;
+        });
+        return { ...project, plans: updatedPlans };
       });
-      savePlansToFilesystem(updatedPlans);
-      return { plans: updatedPlans };
+      savePlansToFilesystem(updatedProjects);
+      return { projects: state.projects };
     });
   }
 }));

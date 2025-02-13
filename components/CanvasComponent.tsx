@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useLayoutEffect, useRef, useCallback, useEffect, useMemo } from 'react';
 import PinPopup from '@/components/PinPopup';
 import useSiteStore from '@/store/useSiteStore';
 import pinSvg from './pin_svg';
@@ -39,11 +39,17 @@ function CanvasComponent({pdfId}) {
 
   // Store states (for pins)
   const canvasDimensions = useSiteStore((state) => state.canvasDimensions);
-  const plans = useSiteStore((state) => state.plans);  // Get plans (including points) from the store
+  const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
+  const selectedProject = useSiteStore((state) => 
+    state.projects.find(p => p.id === state.selectedProjectId)
+  );
+  const { currentPlan, plans } = useMemo(() => ({
+    plans: selectedProject?.plans || [],
+    currentPlan: selectedProject?.plans.find((plan) => plan.id === pdfId)
+  }), [selectedProject, pdfId]);
   const addPoint = useSiteStore((state) => state.addPoint);  // To add a new pin to the store
-  const changePointLocation = useSiteStore((state) => state.changePointLocation);  // To change the location of a pin
-  const currentPlan = plans.find((plan) => plan.id === pdfId);  // Find the current plan by its ID
-  const points = currentPlan?.points || [];  // Get points from the plan
+  // const changePointLocation = useSiteStore((state) => state.changePointLocation);  // To change the location of a pin
+  const points = useMemo(() => currentPlan?.points || [], [currentPlan]);
   const pdfLoaded = useSiteStore((state) => state.pdfLoaded);  // Check if the PDF is loaded
   const [startHoldTime, setStartHoldTime] = useState<number|null>(null);
   const [pointerIsUp, setPointerIsUp] = useState<boolean>(true);

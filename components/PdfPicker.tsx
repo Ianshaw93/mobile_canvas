@@ -45,11 +45,19 @@ const PdfPicker = () => {
   const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
   const addPlan = useSiteStore((state) => state.addPlan);
   const addCanvasRef = useSiteStore((state) => state.addCanvasRef); // Add canvas ref to Zustand
-  const plans = useSiteStore((state) => state.plans);
+  const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
+  const selectedProject = useSiteStore((state) => 
+    state.projects.find(p => p.id === state.selectedProjectId)
+  );
+  const plans = selectedProject?.plans || [];
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
   const router = useRouter();
   const pdfjs = usePDF();
   const [mounted, setMounted] = useState(false); // Track if the component is mounted
+  const [newProjectName, setNewProjectName] = useState('');
+  const addProject = useSiteStore((state) => state.addProject);
+  const setSelectedProjectId = useSiteStore((state) => state.setSelectedProjectId);
+  const projects = useSiteStore((state) => state.projects);
   console.log("plans: ", plans)
 
   useEffect(() => {
@@ -64,11 +72,17 @@ const PdfPicker = () => {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
-      const base64PDF = await blobToBase64(file); // Convert Blob to Base64
-      // send file to server
-      const projectId = getFirstPlanIdOrDatetime();;
-      const planId = `${Date.now()}`
-      console.log("projectId: ", projectId, "planId: ", planId, file.name)
+      const base64PDF = await blobToBase64(file);
+      // Use selectedProjectId instead of getFirstPlanIdOrDatetime
+      const projectId = selectedProjectId;
+      const planId = `${Date.now()}`;
+      
+      if (!projectId) {
+        console.error('No project selected');
+        return;
+      }
+
+      console.log("projectId: ", projectId, "planId: ", planId, file.name);
       addToOfflineQueue(file, projectId, planId);
       // @ts-ignore
       const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
@@ -106,7 +120,7 @@ const PdfPicker = () => {
                 projectId: projectId
               };
               addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
-              addPlan(newPlan); // Add plan to the store
+              addPlan(projectId, newPlan); // Add plan to the store
               setPreviewImage(true);
             });
           }
@@ -133,24 +147,87 @@ const PdfPicker = () => {
 
   return (
     <>
-      <div>
-        <label>
+      {/* Project Selection */}
+      <div className="mb-4">
+        <select 
+          value={selectedProjectId || ''} 
+          onChange={(e) => setSelectedProjectId(e.target.value || null)}
+          className="mr-2 p-2 border rounded"
+          aria-label="Select Project"
+        >
+          <option value="">Select a Project</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+
+        <div className="inline-flex">
           <input
-            id="image"
-            name="image"
-            type="file"
-            accept=".pdf"
-            onChange={handleFileChange}
+            type="text"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            placeholder="New Project Name"
+            className="p-2 border rounded mr-2"
+            aria-label="New Project Name"
           />
-        </label>
-        {/* <button 
+          <button
+            onClick={async () => {
+              if (newProjectName.trim()) {
+                const projectId = `proj_${Date.now()}`;  // Match the ID format from useSiteStore
+                addProject(newProjectName);
+                setNewProjectName('');
+                await useSiteStore.getState().loadPlans();
+                setSelectedProjectId(projectId);  // Auto-select the new project
+              }
+            }}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:ring-2 focus:ring-blue-300"
+          >
+            Add Project
+          </button>
+        </div>
+      </div>
+
+      {/* Add a visual cue when project is selected */}
+      {selectedProjectId && (
+        <div className="mt-2 text-green-600 animate-pulse">
+          ↓ Add PDFs to your project here ↓
+        </div>
+      )}
+
+      {/* Only show file upload if a project is selected */}
+      {selectedProjectId ? (
+        <div>
+          <label className="block mb-4">
+            <span className="sr-only">Choose PDF file</span>
+            <input
+              id="pdf-upload"
+              name="pdf-upload"
+              type="file"
+              accept=".pdf"
+              onChange={handleFileChange}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+              aria-label="Upload PDF"
+            />
+          </label>
+          {/* <button 
             onClick={handleDownloadClick}
             className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
             type="button"
           >
             Download Project
           </button> */}
-      </div>
+        </div>
+      ) : (
+        <p className="text-gray-500">Please select or create a project first</p>
+      )}
+
       <button onClick={() => loginToDropbox()}>
         Log in to Dropbox testing
       </button>
