@@ -58,6 +58,9 @@ const PdfPicker = () => {
   const addProject = useSiteStore((state) => state.addProject);
   const setSelectedProjectId = useSiteStore((state) => state.setSelectedProjectId);
   const projects = useSiteStore((state) => state.projects);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
+  const updatePlanName = useSiteStore((state) => state.updatePlanName);
   console.log("plans: ", plans)
 
   useEffect(() => {
@@ -81,6 +84,11 @@ const PdfPicker = () => {
         console.error('No project selected');
         return;
       }
+
+      // Get current number of plans to determine the index
+      const currentPlans = selectedProject?.plans || [];
+      const newIndex = currentPlans.length;
+      const defaultName = `Building 1 Floor ${newIndex + 1}`;
 
       console.log("projectId: ", projectId, "planId: ", planId, file.name);
       addToOfflineQueue(file, projectId, planId);
@@ -106,13 +114,13 @@ const PdfPicker = () => {
             };
             const renderTask = page.render(renderContext);
             renderTask.promise.then(() => {
-              const thumbnail = canvas.toDataURL(); // Save thumbnail
+              const thumbnail = canvas.toDataURL();
 
-              // Create a new plan object with the Base64 URL instead of Blob URL
               const newPlan = {
-                id: planId, // Unique ID
-                url: base64PDF, // Store the Base64 string instead of a Blob URL
-                thumbnail, // Thumbnail for preview
+                id: planId,
+                name: defaultName, // Use the new default name
+                url: base64PDF,
+                thumbnail,
                 dimensions: { width: canvas.width, height: canvas.height },
                 points: [],
                 images: [],
@@ -120,8 +128,12 @@ const PdfPicker = () => {
                 projectId: projectId
               };
               addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
-              addPlan(projectId, newPlan); // Add plan to the store
+              addPlan(projectId, newPlan);
               setPreviewImage(true);
+              
+              // Automatically start editing the new plan's name
+              setEditingPlanId(planId);
+              setEditingName(defaultName);
             });
           }
         });

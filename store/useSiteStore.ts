@@ -42,6 +42,7 @@ type RenderableContent = {
 
 type Plan = {
   id: string;
+  name?: string;
   url: string; // Path to the PDF file stored on the device
   projectId: string;
   planId: string;
@@ -114,6 +115,7 @@ type State = {
   addProject: (name: string) => void;
   getProject: (id: string) => Project | undefined;
   updateProjectImages: (projectId: string, newImage: string) => void;
+  updatePlanName: (projectId: string, planId: string, name: string) => void;
 };
 
 // Helper function to save plans to the filesystem
@@ -556,6 +558,23 @@ const useSiteStore = create<State>((set, get) => ({
       savePlansToFilesystem(updatedProjects); // Save to storage
       return { projects: updatedProjects };
     }),
+  updatePlanName: (projectId: string, planId: string, name: string) => {
+    set((state) => {
+      const updatedProjects = state.projects.map((project) => {
+        if (project.id === projectId) {
+          return {
+            ...project,
+            plans: project.plans.map((plan) =>
+              plan.id === planId ? { ...plan, name } : plan
+            ),
+          };
+        }
+        return project;
+      });
+      savePlansToFilesystem(updatedProjects);
+      return { projects: updatedProjects };
+    });
+  }
 }));
 
 // Initialize permissions check when store is created
