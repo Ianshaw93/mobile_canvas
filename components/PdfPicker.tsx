@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import useSiteStore from '../store/useSiteStore';
 import { usePDF } from '../hooks/usePDF';
-import {downloadProject, loginToDropbox} from './ApiCalls';
-import BackupButton from './BackupButton';
+// import {downloadProject, loginToDropbox} from './ApiCalls';
+// import BackupButton from './BackupButton';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
@@ -67,6 +67,29 @@ const PdfPicker = () => {
   useEffect(() => {
     setMounted(true); // Set to true once component is mounted
   }, []);
+
+  // Add useEffect to handle automatic project selection
+  useEffect(() => {
+    if (!selectedProjectId && projects.length > 0) {
+      // If there's only one project or no selection yet, select the first project
+      if (projects.length === 1) {
+        setSelectedProjectId(projects[0].id);
+      } else {
+        // Try to get last selected project from localStorage
+        const lastSelectedProject = localStorage.getItem('lastSelectedProject');
+        if (lastSelectedProject && projects.find(p => p.id === lastSelectedProject)) {
+          setSelectedProjectId(lastSelectedProject);
+        }
+      }
+    }
+  }, [projects, selectedProjectId, setSelectedProjectId]);
+
+  // Update localStorage when project selection changes
+  useEffect(() => {
+    if (selectedProjectId) {
+      localStorage.setItem('lastSelectedProject', selectedProjectId);
+    }
+  }, [selectedProjectId]);
 
   if (!mounted) {
     // Render nothing on the server and until the client mounts
@@ -142,10 +165,10 @@ const PdfPicker = () => {
     }
   };
 
-  function handleDownloadClick() {
-    console.log("Downloading project button press")
-    downloadProject()
-  }
+  // function handleDownloadClick() {
+  //   console.log("Downloading project button press")
+  //   downloadProject()
+  // }
   // Navigate to the PDF view
   const viewPdf = (planUrl: string, planId: string) => {
     console.log("planId: ", planId) 
@@ -249,16 +272,16 @@ const PdfPicker = () => {
         <p className="text-gray-500">Please select or create a project first</p>
       )}
 
-      <button onClick={() => loginToDropbox()}>
+      {/* <button onClick={() => loginToDropbox()}>
         Log in to Dropbox testing
-      </button>
+      </button> */}
       {/* <button onClick={() => getAccessToken()}>
         
       </button> */}
-      <BackupButton />
+      {/* <BackupButton />
       <canvas ref={pdfCanvasRef} 
       className="hidden" 
-      />
+      /> */}
 
       <div>
         {plans.map((plan, index) => (
