@@ -315,7 +315,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
                     Delete Image
                   </button>
                 </div>
-                <img src={src} alt={`Image ${index + 1}`} className="max-w-sm max-h-sm mb-2" />
+                <img src={src} alt={`Image ${index + 1}`} className="max-w-[90%] max-h-sm mb-2" />
                 <textarea
                   placeholder={`Comment for image ${index + 1}...`}
                   value={imageComments[imageKey] || ''}
