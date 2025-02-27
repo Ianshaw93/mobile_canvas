@@ -7,7 +7,7 @@ const server_urls = {
     // "server": 'https://mobileappbackend-production-0b73.up.railway.app'
     "server": 'web-production-44b8.up.railway.app'
   }
-  var subEndpoint = server_urls.server;
+  var subEndpoint = server_urls.localhost;
 
 // get access token for dropbox
 export const loginToDropbox = async () => {
@@ -231,6 +231,109 @@ export const sendJsonAsFileToDropbox = async (jsonData: object, fileName: string
     reader.readAsArrayBuffer(blob);
   } catch (err) {
     console.log("Error downloading project: ", err);
+  }
+};
+
+/**
+ * Sends the complete project data to the backend
+ * @param projectData The project object containing all project information
+ * @returns The response from the server
+ */
+export const sendProjectToBackend = async (projectData: any) => {
+  try {
+    // Check if we have a valid subEndpoint
+    if (!subEndpoint) {
+      console.error('No valid API endpoint configured');
+      throw new Error('No valid API endpoint configured. Please check your API settings.');
+    }
+    
+    // Fix the endpoint URL - add https:// prefix if using server URL
+    let endpoint = `${subEndpoint}/api/projects`;
+    console.log('Using endpoint:', endpoint);
+    
+    // Create a sanitized copy for logging (truncate large base64 strings)
+    const sanitizedProject = JSON.parse(JSON.stringify(projectData));
+    
+    // Sanitize plan URLs (PDFs)
+    if (sanitizedProject.plans) {
+      sanitizedProject.plans = sanitizedProject.plans.map((plan: any) => {
+        const sanitizedPlan = { ...plan };
+        
+        // Truncate PDF base64 data
+        if (sanitizedPlan.url && sanitizedPlan.url.startsWith('data:')) {
+          sanitizedPlan.url = `${sanitizedPlan.url.substring(0, 50)}... (truncated)`;
+        }
+        
+        // Truncate image base64 data
+        if (sanitizedPlan.images && sanitizedPlan.images.length > 0) {
+          sanitizedPlan.images = sanitizedPlan.images.map((img: any) => ({
+            ...img,
+            url: img.url ? `${img.url.substring(0, 50)}... (truncated)` : img.url
+          }));
+        }
+        
+        // Also check for images in points
+        if (sanitizedPlan.points && sanitizedPlan.points.length > 0) {
+          sanitizedPlan.points = sanitizedPlan.points.map((point: any) => {
+            const sanitizedPoint = { ...point };
+            if (sanitizedPoint.images && sanitizedPoint.images.length > 0) {
+              sanitizedPoint.images = sanitizedPoint.images.map((img: any) => ({
+                ...img,
+                url: img.url ? `${img.url.substring(0, 50)}... (truncated)` : img.url
+              }));
+            }
+            return sanitizedPoint;
+          });
+        }
+        
+        return sanitizedPlan;
+      });
+    }
+    
+    console.log('Sending project data to backend:', JSON.stringify(sanitizedProject, null, 2));
+    
+    // Add timeout to the fetch request
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(projectData),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Check if response is HTML instead of JSON
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        console.error('Server returned HTML instead of JSON. Check if the endpoint exists.');
+        throw new Error('Server returned HTML instead of JSON. Check if the endpoint exists.');
+      }
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Error sending project to backend:', errorData || response.statusText);
+        throw new Error(`Failed to send project: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Project sent successfully:', data);
+      return data;
+    } catch (fetchError) {
+      if (fetchError.name === 'AbortError') {
+        console.error('Request timed out after 30 seconds');
+        throw new Error('Request timed out. Please check your network connection and try again.');
+      }
+      throw fetchError;
+    }
+  } catch (error) {
+    console.error('Error in sendProjectToBackend:', error);
+    throw new Error(`Failed to send project: ${(error as Error).message}`);
   }
 };
 

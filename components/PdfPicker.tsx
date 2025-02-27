@@ -8,6 +8,7 @@ import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import ReportButton from './ReportButton';
 import { TestReportButton } from './TestReportButton';
+import { sendProjectToBackend } from './ApiCalls';
 
 type Dimensions = {
   width: number;
@@ -190,6 +191,34 @@ const PdfPicker = () => {
     }
   };
 
+  // Function to send the current project to the backend
+  const handleSendProjectToBackend = async () => {
+    if (!selectedProjectId) {
+      console.log("No project selected");
+      return;
+    }
+
+    const projectToSend = projects.find(p => p.id === selectedProjectId);
+    if (!projectToSend) {
+      console.log("Selected project not found");
+      return;
+    }
+
+    // Log the project data as formatted JSON
+    console.log("Sending project to backend:");
+    console.log(JSON.stringify(projectToSend, null, 2));
+    
+    try {
+      const result = await sendProjectToBackend(projectToSend);
+      console.log("Project sent successfully:");
+      console.log(JSON.stringify(result, null, 2));
+      // You could add a success notification here
+    } catch (error) {
+      console.error("Failed to send project:", error);
+      // You could add an error notification here
+    }
+  };
+
   return (
     <>
       {/* Project Selection */}
@@ -367,13 +396,25 @@ const PdfPicker = () => {
         </div>
       )}
 
+      {/* Add this button near the bottom of the component, before the closing tag */}
+      {selectedProjectId && (
+        <div className="mt-4">
+          <button
+            onClick={handleSendProjectToBackend}
+            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 focus:ring-2 focus:ring-green-300"
+          >
+            Send Project to Backend
+          </button>
+        </div>
+      )}
+
       <TestReportButton />
       {selectedProjectId && (
         <ReportButton projectId={selectedProjectId} />
-
       )}
     </>
   );
 };
 
 export default PdfPicker;
+
