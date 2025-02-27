@@ -4,19 +4,19 @@ const config: CapacitorConfig = {
   appId: 'com.example.app',
   appName: 'mobile_canvas',
   webDir: 'out',
-  // server: {
-  //   androidScheme: 'http',
-  //   iosScheme: 'myapp',
-  //   url: "http://192.168.0.14:3000",
-  //   allowNavigation: ["*"],
-  //   cleartext: true
-  // },
-    "server": {
-    "androidScheme": "http",
-    "allowNavigation": ["*"],
-  iosScheme: 'myapp',
-    "cleartext": true
+  server: {
+    androidScheme: 'http',
+    iosScheme: 'myapp',
+    url: "http://192.168.0.14:3000",
+    allowNavigation: ["*"],
+    cleartext: true
   },
+  //   "server": {
+  //   "androidScheme": "http",
+  //   "allowNavigation": ["*"],
+  // iosScheme: 'myapp',
+  //   "cleartext": true
+  // },
   plugins: {
     Permissions: {
       requestedPermissions: [

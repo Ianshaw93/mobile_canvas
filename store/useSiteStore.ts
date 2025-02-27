@@ -9,6 +9,8 @@ import {
   requestFileSystemPermissions, 
   requestAllPermissions 
 } from '@/components/requestiPermission';
+import { generateReportHTML, ReportTemplateData } from '@/utils/reportGenerator';
+import { generateDocxReport } from '@/utils/reportGenerator/docxReport';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
@@ -116,7 +118,9 @@ type State = {
   getProject: (id: string) => Project | undefined;
   updateProjectImages: (projectId: string, newImage: string) => void;
   updatePlanName: (projectId: string, planId: string, name: string) => void;
+  generateReport: (projectId: string) => Promise<string>;
 };
+
 
 // Helper function to save plans to the filesystem
 const savePlansToFilesystem = async (projects: Project[]) => {
@@ -575,6 +579,57 @@ const useSiteStore = create<State>((set, get) => ({
       savePlansToFilesystem(updatedProjects);
       return { projects: updatedProjects };
     });
+  },
+  generateReport: async (projectId: string) => {
+    const { projects } = get();
+    const project = projects.find(p => p.id === projectId);
+    
+    if (!project) throw new Error('Project not found');
+
+    try {
+      const reportData: ReportTemplateData = {
+        projectName: project.name,
+        generatedDate: new Date().toLocaleDateString(),
+        plans: project.plans.map(plan => ({
+          name: plan.name || '',
+          points: plan.points.map(point => ({
+            id: point.id,
+            x: point.x,
+            y: point.y,
+            comment: point.comment || '',
+            images: point.images
+          }))
+        }))
+      };
+
+      const buffer = await generateDocxReport(reportData);
+      const fileName = `report_${project.name}_${Date.now()}.docx`;
+      
+      await Filesystem.writeFile({
+        path: fileName,
+        data: buffer.toString('base64'),
+        directory: Directory.Documents,
+        encoding: Encoding.BASE64,
+        recursive: true
+      });
+
+      const uriResult = await Filesystem.getUri({
+        directory: Directory.Documents,
+        path: fileName
+      });
+
+      if (!uriResult?.uri) {
+        throw new Error('Failed to get file URI');
+      }
+
+      // Use FileOpener for better DOCX handling
+      window.open(uriResult.uri, '_blank');
+      return uriResult.uri;
+
+    } catch (error) {
+      console.error('Error generating report:', error);
+      throw error;
+    }
   }
 }));
 

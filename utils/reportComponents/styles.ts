@@ -1,0 +1,3 @@
+export const reportStyles = `
+  // ... styles from above ...
+`; 

@@ -6,6 +6,8 @@ import { usePDF } from '../hooks/usePDF';
 // import BackupButton from './BackupButton';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import ReportButton from './ReportButton';
+import { TestReportButton } from './TestReportButton';
 
 type Dimensions = {
   width: number;
@@ -363,6 +365,12 @@ const PdfPicker = () => {
             </div>
           </div>
         </div>
+      )}
+
+      <TestReportButton />
+      {selectedProjectId && (
+        <ReportButton projectId={selectedProjectId} />
+
       )}
     </>
   );

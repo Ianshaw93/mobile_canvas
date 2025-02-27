@@ -26,6 +26,7 @@
     "@types/react-dom": "18.2.7",
     "autoprefixer": "10.4.15",
     "base64url": "^3.0.1",
+    "docx": "^9.2.0",
     "dropbox": "^10.34.0",
     "eslint": "8.47.0",
     "eslint-config-next": "13.4.17",
