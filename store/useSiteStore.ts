@@ -11,6 +11,7 @@ import {
 } from '@/components/requestiPermission';
 import { generateReportHTML, ReportTemplateData } from '@/utils/reportGenerator';
 import { generateDocxReport } from '@/utils/reportGenerator/docxReport';
+import { generateProjectReport } from '@/services/ReportService';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
@@ -581,53 +582,99 @@ const useSiteStore = create<State>((set, get) => ({
     });
   },
   generateReport: async (projectId: string) => {
-    const { projects } = get();
-    const project = projects.find(p => p.id === projectId);
-    
-    if (!project) throw new Error('Project not found');
-
     try {
-      const reportData: ReportTemplateData = {
-        projectName: project.name,
-        generatedDate: new Date().toLocaleDateString(),
-        plans: project.plans.map(plan => ({
-          name: plan.name || '',
-          points: plan.points.map(point => ({
-            id: point.id,
-            x: point.x,
-            y: point.y,
-            comment: point.comment || '',
-            images: point.images
-          }))
-        }))
-      };
-
-      const buffer = await generateDocxReport(reportData);
-      const fileName = `report_${project.name}_${Date.now()}.docx`;
+      const project = get().projects.find(p => p.id === projectId);
+      if (!project) throw new Error('Project not found');
       
-      await Filesystem.writeFile({
-        path: fileName,
-        data: buffer.toString('base64'),
-        directory: Directory.Documents,
-        encoding: Encoding.BASE64,
-        recursive: true
-      });
-
-      const uriResult = await Filesystem.getUri({
-        directory: Directory.Documents,
-        path: fileName
-      });
-
-      if (!uriResult?.uri) {
-        throw new Error('Failed to get file URI');
+      const plans = JSON.parse(JSON.stringify(get().projects.find(p => p.id === projectId)?.plans || []));
+      if (!plans.length) throw new Error('No plans found for this project');
+      
+      console.log("Debug - plans before processing:", plans.map(p => ({
+        name: p.name,
+        pointCount: p.points?.length,
+        imageCount: p.images?.length
+      })));
+      
+      // Log all images with their properties for debugging
+      for (const plan of plans) {
+        if (plan.images && plan.images.length > 0) {
+          console.log(`Plan ${plan.name} has ${plan.images.length} images:`);
+          plan.images.forEach((img, idx) => {
+            console.log(`  Image ${idx} properties:`, Object.keys(img).map(key => `${key}=${img[key]}`).join(', '));
+          });
+        }
+        
+        // Log all points with their properties
+        if (plan.points && plan.points.length > 0) {
+          console.log(`Plan ${plan.name} has ${plan.points.length} points:`);
+          plan.points.forEach((point, idx) => {
+            console.log(`  Point ${idx} (id=${point.id}) properties:`, Object.keys(point).map(key => `${key}=${point[key]}`).join(', '));
+          });
+        }
       }
-
-      // Use FileOpener for better DOCX handling
-      window.open(uriResult.uri, '_blank');
-      return uriResult.uri;
-
+      
+      // For each plan, properly prepare points with their images
+      for (const plan of plans) {
+        // Make sure we have the full points array
+        plan.points = plan.points || [];
+        plan.images = plan.images || [];
+        
+        console.log(`Plan ${plan.name}: Finding images for ${plan.points.length} points from ${plan.images.length} total images`);
+        
+        // Make sure each point has an images array
+        for (const point of plan.points) {
+          // Initialize images array if not present
+          point.images = point.images || [];
+          
+          // Try multiple ways to match images to points
+          const foundImages = plan.images.filter(img => {
+            // Check various possible relationships
+            const matchByPointId = img.pointId && img.pointId === point.id;
+            const matchByPointIndex = img.pointIndex && img.pointIndex.toString() === point.id;
+            const matchByKeyIncludes = img.key && img.key.includes(point.id);
+            
+            // Add for image objects with .point property
+            const matchByPointProperty = img.point && img.point === point.id;
+            
+            // New: try to match by common prefix in ID
+            const matchByPrefixId = img.id && point.id && 
+                                   (img.id.startsWith(point.id) || point.id.startsWith(img.id));
+            
+            const isMatch = matchByPointId || matchByPointIndex || matchByKeyIncludes || 
+                            matchByPointProperty || matchByPrefixId;
+            
+            if (isMatch) {
+              console.log(`  Found matching image for point ${point.id}: ${img.key || img.id || 'unknown'}`);
+            }
+            
+            return isMatch;
+          });
+          
+          // Add found images to the point
+          if (foundImages.length > 0) {
+            point.images = foundImages;
+            console.log(`  Point ${point.id} now has ${foundImages.length} images attached`);
+          } else {
+            console.log(`  No images found for point ${point.id}`);
+            
+            // As a fallback, try to get all images that might be related by directory path
+            const possibleRelatedImages = point.id ? 
+              plan.images.filter(img => 
+                img.url && 
+                (img.url.includes(`point_${point.id}`) || img.url.includes(`/${point.id}/`))
+              ) : [];
+            
+            if (possibleRelatedImages.length > 0) {
+              point.images = possibleRelatedImages;
+              console.log(`  Fallback: Found ${possibleRelatedImages.length} images by URL pattern for point ${point.id}`);
+            }
+          }
+        }
+      }
+      
+      return await generateProjectReport(project, plans);
     } catch (error) {
-      console.error('Error generating report:', error);
+      console.error('Failed to generate report:', error);
       throw error;
     }
   }

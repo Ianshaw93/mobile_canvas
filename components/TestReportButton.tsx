@@ -1,4 +1,4 @@
-import { generateTestDocument } from '@/utils/reportGenerator/docxReport';
+import { generateTestPdf } from '../utils/reportGenerator/pdfReport';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import useSiteStore from '@/store/useSiteStore';
 
@@ -9,7 +9,7 @@ export const TestReportButton = () => {
 
   const handleGenerateTest = async () => {
     try {
-      console.log('Starting test document generation...');
+      console.log('Starting test PDF generation...');
       
       // Get thumbnail from first plan if available
       const firstPlan = selectedProject?.plans?.[0];
@@ -34,12 +34,12 @@ export const TestReportButton = () => {
       };
       
       console.log('Using test data with thumbnail:', testData);
-      const buffer = await generateTestDocument(testData);
-      const fileName = `report_Test_${Date.now()}.docx`;
+      const pdfBuffer = await generateTestPdf(testData);
+      const fileName = `report_Test_${Date.now()}.pdf`;
       
       await Filesystem.writeFile({
         path: fileName,
-        data: buffer.toString('base64'),
+        data: pdfBuffer.toString('base64'),
         directory: Directory.Documents,
         encoding: Encoding.BASE64,
         recursive: true
@@ -55,8 +55,8 @@ export const TestReportButton = () => {
       }
 
     } catch (error) {
-      console.error('Error generating test document:', error);
-      alert('Failed to generate test document: ' + error.message);
+      console.error('Error generating test PDF:', error);
+      alert('Failed to generate test PDF: ' + error.message);
     }
   };
 
@@ -66,7 +66,7 @@ export const TestReportButton = () => {
       className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
       disabled={!selectedProject?.plans?.length}
     >
-      Generate Test Document
+      Generate Test PDF
     </button>
   );
 }; 
