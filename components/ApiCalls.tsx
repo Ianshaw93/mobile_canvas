@@ -325,7 +325,7 @@ export const sendProjectToBackend = async (projectData: any) => {
       console.log('Project sent successfully:', data);
       return data;
     } catch (fetchError) {
-      if (fetchError.name === 'AbortError') {
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
         console.error('Request timed out after 30 seconds');
         throw new Error('Request timed out. Please check your network connection and try again.');
       }
