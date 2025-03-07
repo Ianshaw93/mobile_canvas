@@ -1,6 +1,6 @@
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'
 import React, { useEffect, useState } from 'react'
-import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
 import { sendData } from './ApiCalls';
@@ -120,10 +120,12 @@ const CameraLogic= ({selectedPoint, planId}) => {
     });
     const saveImageToFilesystem = async (base64Data: string, fileName: string) => {
       try {
+        // Save with maximum quality
         await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
-          directory: Directory.Data // Using app-specific storage instead of external
+          directory: Directory.Data,
+          encoding: Encoding.UTF8 // Using UTF8 for base64 data
         });
       } catch (err) {
         console.error('Error saving file:', err);
@@ -131,22 +133,47 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     const convertPhotoToBase64 = async (photo: Photo) => {
-      const response = await fetch(photo.webPath!);
-      const blob = await response.blob();
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      try {
+        const response = await fetch(photo.webPath!);
+        const blob = await response.blob();
+        
+        // Create a canvas to handle the image
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        return new Promise<string>((resolve, reject) => {
+          img.onload = () => {
+            // Set canvas size to match image
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            // Draw image with best quality
+            ctx?.drawImage(img, 0, 0);
+            
+            // Get as high quality JPEG
+            const quality = 1.0; // Maximum quality
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(dataUrl);
+          };
+          img.onerror = reject;
+          img.src = URL.createObjectURL(blob);
+        });
+      } catch (error) {
+        console.error('Error converting photo:', error);
+        throw error;
+      }
     };
   
     const takePicture = async () => {
       const image = await Camera.getPhoto({
-        quality: 90,
+        quality: 100,
         allowEditing: false,
         resultType: CameraResultType.Uri,
-        source: CameraSource.Camera
+        source: CameraSource.Camera,
+        correctOrientation: true,
+        width: 4096, // Set a high max width
+        height: 4096 // Set a high max height
       });
       console.log("image: ", image);
       const projectId = getFirstPlanIdOrDatetime();;

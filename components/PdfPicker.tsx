@@ -102,6 +102,7 @@ const PdfPicker = () => {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
+      // Save the original PDF data without modification
       const base64PDF = await blobToBase64(file);
       const projectId = selectedProjectId;
       const planId = `${Date.now()}`;
@@ -118,22 +119,28 @@ const PdfPicker = () => {
 
       console.log("projectId: ", projectId, "planId: ", planId, file.name);
       addToOfflineQueue(file, projectId, planId);
+      
+      // Load the PDF to get its original dimensions
       // @ts-ignore
       const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
       loadingTask.promise.then((pdf: any) => {
         const pageNumber = 1;
         pdf.getPage(pageNumber).then((page: any) => {
+          // Get the original viewport at scale 1.0
+          const originalViewport = page.getViewport({ scale: 1.0 });
+          
           const canvas = pdfCanvasRef.current;
           const context = canvas?.getContext('2d');
-          const scale = 1.5;
-          const viewport = page.getViewport({ scale });
+          const displayScale = 1.5; // Scale for display thumbnail
+          const viewport = page.getViewport({ scale: displayScale });
 
           if (canvas) {
+            // Set canvas dimensions for thumbnail
             canvas.height = viewport.height;
             canvas.width = viewport.width;
             setCanvasDimensions({ width: canvas.width, height: canvas.height });
 
-            // Render PDF page into canvas
+            // Render PDF page into canvas for thumbnail
             const renderContext = {
               canvasContext: context,
               viewport,
@@ -144,10 +151,14 @@ const PdfPicker = () => {
 
               const newPlan = {
                 id: planId,
-                name: defaultName, // Use the new default name
-                url: base64PDF,
-                thumbnail,
-                dimensions: { width: canvas.width, height: canvas.height },
+                name: defaultName,
+                url: base64PDF, // Original PDF data
+                thumbnail, // Separate thumbnail for display
+                dimensions: {
+                  width: originalViewport.width,   // Store original PDF dimensions
+                  height: originalViewport.height,
+                  displayScale: displayScale       // Store the display scale
+                },
                 points: [],
                 images: [],
                 planId: planId,
@@ -157,7 +168,6 @@ const PdfPicker = () => {
               addPlan(projectId, newPlan);
               setPreviewImage(true);
               
-              // Automatically start editing the new plan's name
               setEditingPlanId(planId);
               setEditingName(defaultName);
             });
