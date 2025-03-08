@@ -10,17 +10,16 @@ import {
   requestAllPermissions 
 } from '@/components/requestiPermission';
 import { generateReportHTML, ReportTemplateData } from '@/utils/reportGenerator';
-import { generateDocxReport } from '@/utils/reportGenerator/docxReport';
 import { generateProjectReport } from '@/services/ReportService';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
-type Dimensions = {
+export type Dimensions = {
   width: number;
   height: number;
 };
 
-interface Point {
+export interface Point {
   id: string;
   x: number;
   y: number;
@@ -28,7 +27,7 @@ interface Point {
   comment: string;
 }
 
-type Image = {
+export type Image = {
   key: string; // Key to retrieve the image from local storage
   pointIndex: number;
   projectId: string;
@@ -38,12 +37,12 @@ type Image = {
   // data: string; // Base64 string of the image 
 };
 
-type RenderableContent = {
+export type RenderableContent = {
   type: 'pdf' | 'image'; // Specify the type of content (PDF, image, etc.)
   data: string | ArrayBuffer; // The raw PDF data or base64 string for an image
 };
 
-type Plan = {
+export type Plan = {
   id: string;
   name?: string;
   url: string; // Path to the PDF file stored on the device
@@ -589,7 +588,7 @@ const useSiteStore = create<State>((set, get) => ({
       const plans = JSON.parse(JSON.stringify(get().projects.find(p => p.id === projectId)?.plans || []));
       if (!plans.length) throw new Error('No plans found for this project');
       
-      console.log("Debug - plans before processing:", plans.map(p => ({
+      console.log("Debug - plans before processing:", plans.map((p: Plan) => ({
         name: p.name,
         pointCount: p.points?.length,
         imageCount: p.images?.length
@@ -599,16 +598,20 @@ const useSiteStore = create<State>((set, get) => ({
       for (const plan of plans) {
         if (plan.images && plan.images.length > 0) {
           console.log(`Plan ${plan.name} has ${plan.images.length} images:`);
-          plan.images.forEach((img, idx) => {
-            console.log(`  Image ${idx} properties:`, Object.keys(img).map(key => `${key}=${img[key]}`).join(', '));
+          plan.images.forEach((img: Image, idx: number) => {
+            const safeKeys = ['key', 'url', 'comment', 'pointIndex', 'projectId', 'planId'];
+            const imageProps = safeKeys.map(key => `${key}=${(img as any)[key] || 'undefined'}`).join(', ');
+            console.log(`  Image ${idx} properties: ${imageProps}`);
           });
         }
         
         // Log all points with their properties
         if (plan.points && plan.points.length > 0) {
           console.log(`Plan ${plan.name} has ${plan.points.length} points:`);
-          plan.points.forEach((point, idx) => {
-            console.log(`  Point ${idx} (id=${point.id}) properties:`, Object.keys(point).map(key => `${key}=${point[key]}`).join(', '));
+          plan.points.forEach((point: Point, idx: number) => {
+            const safeKeys = ['id', 'x', 'y', 'comment'];
+            const pointProps = safeKeys.map(key => `${key}=${point[key as keyof Point]}`).join(', ');
+            console.log(`  Point ${idx} properties: ${pointProps}`);
           });
         }
       }
@@ -627,27 +630,12 @@ const useSiteStore = create<State>((set, get) => ({
           point.images = point.images || [];
           
           // Try multiple ways to match images to points
-          const foundImages = plan.images.filter(img => {
-            // Check various possible relationships
-            const matchByPointId = img.pointId && img.pointId === point.id;
-            const matchByPointIndex = img.pointIndex && img.pointIndex.toString() === point.id;
-            const matchByKeyIncludes = img.key && img.key.includes(point.id);
+          const foundImages = plan.images.filter((img: Image) => {
+            // Check various possible relationships based on key and url
+            const matchByKey = img.key && point.id && img.key.includes(point.id);
+            const matchByUrl = img.url && point.id && img.url.includes(point.id);
             
-            // Add for image objects with .point property
-            const matchByPointProperty = img.point && img.point === point.id;
-            
-            // New: try to match by common prefix in ID
-            const matchByPrefixId = img.id && point.id && 
-                                   (img.id.startsWith(point.id) || point.id.startsWith(img.id));
-            
-            const isMatch = matchByPointId || matchByPointIndex || matchByKeyIncludes || 
-                            matchByPointProperty || matchByPrefixId;
-            
-            if (isMatch) {
-              console.log(`  Found matching image for point ${point.id}: ${img.key || img.id || 'unknown'}`);
-            }
-            
-            return isMatch;
+            return matchByKey || matchByUrl;
           });
           
           // Add found images to the point
@@ -659,7 +647,7 @@ const useSiteStore = create<State>((set, get) => ({
             
             // As a fallback, try to get all images that might be related by directory path
             const possibleRelatedImages = point.id ? 
-              plan.images.filter(img => 
+              plan.images.filter((img: Image) => 
                 img.url && 
                 (img.url.includes(`point_${point.id}`) || img.url.includes(`/${point.id}/`))
               ) : [];

@@ -1,31 +1,28 @@
-import { ReportTemplateData } from '@/utils/reportGenerator/types';
+import { Plan, Point } from '@/store/useSiteStore';
+import type { Image as ImageType } from '@/store/useSiteStore';
+import { ReportTemplateData } from './types';
 import dynamic from 'next/dynamic';
 import { renderToStaticMarkup } from 'react-dom/server';
 import React, { useEffect, useState } from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 
-// Simplified pdfMake initialization without custom fonts
-// @ts-ignore
-let pdfMake;
-if (typeof window !== 'undefined') {
+// Move pdfMake initialization to a separate function that runs only on client
+let pdfMakeInstance: any = null;
+const initPdfMake = async () => {
+  if (typeof window === 'undefined') return null;
+  if (pdfMakeInstance) return pdfMakeInstance;
+
   try {
-    pdfMake = require('pdfmake/build/pdfmake');
-    const pdfFonts = require('pdfmake/build/vfs_fonts');
-    
-    // Check the structure - some versions have different exports
-    if (pdfFonts.pdfMake && pdfFonts.pdfMake.vfs) {
-      pdfMake.vfs = pdfFonts.pdfMake.vfs;
-    } else if (pdfFonts.vfs) {
-      pdfMake.vfs = pdfFonts.vfs;
-    } else {
-      console.error('Could not find virtual file system in pdfFonts');
-    }
-    
-    console.log('pdfMake initialized with default fonts');
+    const pdfMake = (await import('pdfmake/build/pdfmake')).default;
+    const pdfFonts = (await import('pdfmake/build/vfs_fonts')).default;
+    pdfMake.vfs = pdfFonts.pdfMake.vfs;
+    pdfMakeInstance = pdfMake;
+    return pdfMake;
   } catch (error) {
     console.error('Error initializing pdfMake:', error);
+    return null;
   }
-}
+};
 
 const imageToDataURL = async (base64Image: string): Promise<string> => {
   try {
@@ -125,7 +122,7 @@ export const generatePdfReport = async (data: ReportTemplateData): Promise<Buffe
   return new Promise((resolve, reject) => {
     try {
       // @ts-ignore
-      const pdfDocGenerator = pdfMake.createPdf(docDefinition);
+      const pdfDocGenerator = pdfMakeInstance.createPdf(docDefinition);
       // @ts-ignore
       pdfDocGenerator.getBuffer((buffer) => {
         console.log('Project PDF generated, buffer size:', buffer.length);
@@ -176,7 +173,7 @@ export const generateTestPdf = async (testData: ReportTemplateData): Promise<Buf
         try {
           console.log('Generating PDF...');
           // @ts-ignore
-          const pdfDocGenerator = pdfMake.createPdf(docDefinition);
+          const pdfDocGenerator = pdfMakeInstance.createPdf(docDefinition);
           // @ts-ignore
           pdfDocGenerator.getBuffer((buffer) => {
             console.log('PDF generated, buffer size:', buffer.length);
@@ -211,7 +208,7 @@ export const generateTestPdf = async (testData: ReportTemplateData): Promise<Buf
     return new Promise((resolve, reject) => {
       try {
         // @ts-ignore
-        const pdfDocGenerator = pdfMake.createPdf(docDefinition);
+        const pdfDocGenerator = pdfMakeInstance.createPdf(docDefinition);
         // @ts-ignore
         pdfDocGenerator.getBuffer((buffer) => {
           console.log('Basic PDF created, buffer size:', buffer.length);
@@ -274,8 +271,42 @@ const PinPreviewComponent = dynamic(
   { ssr: false }
 );
 
+// PinPreviewWrapper component moved outside the function
+interface PinPreviewWrapperProps {
+  onRender: () => void;
+  pdfId: string;
+  point: Point;
+}
+
+function PinPreviewWrapper({ onRender, pdfId, point }: PinPreviewWrapperProps) {
+  const [rendered, setRendered] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!rendered) {
+        setRendered(true);
+        onRender();
+      }
+    }, 1500);
+    
+    return () => clearTimeout(timer);
+  }, [rendered, onRender]);
+  
+  return React.createElement(
+    'div', 
+    { style: { width: 300, height: 300 } },
+    React.createElement(PinPreviewComponent, {
+      pdfId: pdfId,
+      point: point,
+      size: 300,
+      zoomLevel: 5,
+      lowQuality: false
+    })
+  );
+}
+
 // Updated pin preview generation function without JSX
-const generatePinPreviewImage = async (pdfId: string, point: any): Promise<string> => {
+const generatePinPreviewImage = async (pdfId: string, point: Point): Promise<string> => {
   if (typeof window === 'undefined') {
     console.log('Cannot generate pin preview on server');
     return '';
@@ -284,39 +315,6 @@ const generatePinPreviewImage = async (pdfId: string, point: any): Promise<strin
   try {
     console.log(`Generating preview for point ${point.id} on plan ${pdfId}`);
     
-    // Create a wrapper component to properly handle React lifecycle
-    // @ts-ignore
-    function PinPreviewWrapper(props) {
-      const [rendered, setRendered] = useState(false);
-      const { onRender } = props; // Destructure onRender from props
-      
-      useEffect(() => {
-        // Give time for the component to fully render
-        const timer = setTimeout(() => {
-          if (!rendered) {
-            setRendered(true);
-            onRender();
-          }
-        }, 1500);
-        
-        return () => clearTimeout(timer);
-      }, [rendered, onRender]); // Use destructured value in dependency array
-      
-      // Use React.createElement instead of JSX
-      return React.createElement(
-        'div', 
-        { style: { width: 300, height: 300 } },
-        React.createElement(PinPreviewComponent, {
-          pdfId: pdfId,
-          point: point,
-          size: 300,
-          zoomLevel: 5,
-          lowQuality: false
-        })
-      );
-    }
-    
-    // Mount in the DOM where it's visible during rendering
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.zIndex = '-1000';
@@ -326,39 +324,22 @@ const generatePinPreviewImage = async (pdfId: string, point: any): Promise<strin
     document.body.appendChild(container);
     
     return new Promise((resolve) => {
+      const root = createRoot(container);
+      
       const captureCanvas = () => {
         try {
-          console.log('Attempting to capture canvas...');
           const canvases = container.querySelectorAll('canvas');
-          console.log(`Found ${canvases.length} canvas elements`);
-          
           if (canvases.length > 0) {
             const canvas = canvases[0];
-            try {
-              console.log(`Canvas dimensions: ${canvas.width}x${canvas.height}`);
-              const dataUrl = canvas.toDataURL('image/png');
-              console.log(`Canvas data URL length: ${dataUrl.length}`);
-              
-              // Test the image data
-              const testImg = new Image();
-              testImg.onload = () => console.log('Canvas data is valid');
-              testImg.onerror = () => console.error('Canvas data is invalid');
-              testImg.src = dataUrl;
-              
-              resolve(dataUrl);
-            } catch (err) {
-              console.error('Error converting canvas to data URL:', err);
-              resolve('');
-            }
+            const dataUrl = canvas.toDataURL('image/png');
+            resolve(dataUrl);
           } else {
-            console.error('No canvas found in the container');
             resolve('');
           }
           
           // Clean up
           setTimeout(() => {
-            // @ts-ignore
-            ReactDOM.unmountComponentAtNode(container);
+            root.unmount();
             document.body.removeChild(container);
           }, 100);
         } catch (err) {
@@ -367,30 +348,146 @@ const generatePinPreviewImage = async (pdfId: string, point: any): Promise<strin
         }
       };
       
-      // Render with the wrapper using React.createElement instead of JSX
-      ReactDOM.render(
-        React.createElement(PinPreviewWrapper, { onRender: captureCanvas }),
-        container
-      );
+      root.render(React.createElement(PinPreviewWrapper, { 
+        onRender: captureCanvas,
+        pdfId,
+        point
+      }));
     });
   } catch (error) {
     console.error('Error in generatePinPreviewImage:', error);
     return '';
   }
 };
-// @ts-ignore
-export const generateProjectPdfReport = async (project, plans): Promise<Buffer> => {
+
+const generateLocationPreview = async (point: Point): Promise<string> => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 300;
+  canvas.height = 200;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    console.warn('Could not get canvas context');
+    return '';
+  }
+
+  // Draw the preview
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(0, 0, 300, 200);
+  ctx.fillStyle = '#3b82f6';
+  ctx.beginPath();
+  ctx.arc(150, 100, 10, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = 'black';
+  ctx.font = '14px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(`Point ID: ${point.id}`, 150, 130);
+  ctx.fillText(`X: ${point.x.toFixed(2)}, Y: ${point.y.toFixed(2)}`, 150, 150);
+
+  return canvas.toDataURL('image/png');
+};
+
+// Create a type for the report point that matches ReportTemplateData
+interface ReportPoint {
+  id: string;
+  x: number;
+  y: number;
+  comment: string;
+  images: string[];
+  locationPreview?: string | null;
+}
+
+// Helper function to convert Point to ReportPoint
+const convertToReportPoint = async (point: Point): Promise<ReportPoint> => {
+  const preview = await generateLocationPreview(point);
+  
+  return {
+    id: point.id,
+    x: point.x,
+    y: point.y,
+    comment: point.comment || '',
+    images: (point.images || []).map(img => img.url || '').filter(url => url !== ''),
+    locationPreview: preview
+  };
+};
+
+// Import types from ReportService
+interface ReportServicePlan {
+  id: string;
+  name: string;
+  url: string;
+  points: {
+    id: string;
+    x: number;
+    y: number;
+    comment?: string;
+    images: {
+      key?: string;
+      comment?: string;
+      url?: string;
+    }[];
+  }[];
+  dimensions?: {
+    width: number;
+    height: number;
+  };
+}
+
+// Helper function to convert ReportService Plan to Store Plan
+const convertToStorePlan = (plan: ReportServicePlan): Plan => ({
+  id: plan.id,
+  name: plan.name || '',
+  url: plan.url,
+  projectId: plan.id, // Use plan id as project id for now
+  planId: plan.id,
+  points: plan.points.map(point => ({
+    id: point.id,
+    x: point.x,
+    y: point.y,
+    comment: point.comment || '',
+    images: point.images.map(img => ({
+      key: img.key || `temp_${img.url}`,
+      pointIndex: 0,
+      projectId: plan.id,
+      planId: plan.id,
+      comment: img.comment,
+      url: img.url || ''
+    }))
+  })),
+  images: [] // Initialize empty images array
+});
+
+export const generateProjectPdfReport = async (
+  project: { name: string }, 
+  reportPlans: ReportServicePlan[]
+): Promise<Buffer> => {
+  if (typeof window === 'undefined') {
+    throw new Error('PDF generation can only be performed in the browser');
+  }
+
   console.log('Generating full project PDF report');
-  console.log('Project:', project.name, 'Plans count:', plans.length);
+  console.log('Project:', project.name, 'Plans count:', reportPlans.length);
   
   try {
-    // Log image information for debugging
-    plans.forEach(plan => {
+    // Initialize pdfMake
+    const pdfMake = await initPdfMake();
+    if (!pdfMake) {
+      throw new Error('Failed to initialize PDF generator');
+    }
+
+    // Convert plans to store format
+    const plans = reportPlans.map(convertToStorePlan);
+    
+    // Log all images with their properties for debugging
+    plans.forEach((plan: Plan) => {
       console.log(`Plan ${plan.name} has ${plan.points.length} points`);
-      plan.points.forEach(point => {
+      plan.points.forEach((point: Point) => {
         console.log(`Point ${point.id} has ${point.images?.length || 0} images and comment: "${point.comment || 'none'}"`);
         if (point.images && point.images.length > 0) {
-          point.images.forEach((img, idx) => {
+          point.images.forEach((img: ImageType, idx: number) => {
             console.log(`  Image ${idx}: comment="${img.comment || 'none'}" url=${img.url ? 'exists' : 'missing'}`);
           });
         }
@@ -400,32 +497,41 @@ export const generateProjectPdfReport = async (project, plans): Promise<Buffer> 
     const reportData: ReportTemplateData = {
       projectName: project.name,
       generatedDate: new Date().toLocaleDateString(),
-      plans: plans.map(plan => ({
+      plans: await Promise.all(plans.map(async (plan: Plan) => ({
         id: plan.id,
         name: plan.name || 'Unnamed Plan',
-        points: plan.points.map(point => ({
-          id: point.id,
-          x: point.x,
-          y: point.y,
-          comment: point.comment || '',
-          images: point.images ? point.images.map(img => img.url) : [],
-          locationPreview: null // Will be populated with the pin preview image
-        }))
-      }))
+        url: plan.url,
+        points: await Promise.all(plan.points.map(convertToReportPoint))
+      })))
     };
     
     // Process and convert all images in advance
     for (const plan of reportData.plans) {
       for (const point of plan.points) {
+        // First, create a Point-compatible object for the preview generation
+        const pointForPreview: Point = {
+          id: point.id,
+          x: point.x,
+          y: point.y,
+          comment: point.comment,
+          images: point.images.map(url => ({
+            key: `temp_${url}`,
+            pointIndex: 0,
+            projectId: plan.id,
+            planId: plan.id,
+            url: url
+          }))
+        };
+
         // Generate pin preview using the PinPreview component
         try {
-          const previewImage = await generatePinPreviewImage(plan.id, point);
+          const previewImage = await generatePinPreviewImage(plan.id, pointForPreview);
           point.locationPreview = previewImage;
         } catch (err) {
           console.error(`Failed to generate pin preview: ${err}`);
         }
         
-        // Convert images to data URLs (existing code)
+        // Convert images to data URLs
         if (point.images && point.images.length) {
           const processedImages = [];
           for (const imgUrl of point.images) {
@@ -445,14 +551,17 @@ export const generateProjectPdfReport = async (project, plans): Promise<Buffer> 
         if (!point.locationPreview || point.locationPreview.length <= 100) {
           // Create a simple canvas with a marker (fallback)
           const canvas = document.createElement('canvas');
-          canvas.width = 300;
-          canvas.height = 200;
           const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            console.warn('Could not get canvas context');
+            point.locationPreview = ''; // Set empty string instead of returning
+            continue; // Skip to next point
+          }
           
-          // Draw fallback image
+          // Now ctx is guaranteed to be non-null
           ctx.fillStyle = '#f0f0f0';
           ctx.fillRect(0, 0, 300, 200);
-          ctx.fillStyle = '#3b82f6'; // Blue color like your app's pins
+          ctx.fillStyle = '#3b82f6';
           ctx.beginPath();
           ctx.arc(150, 100, 10, 0, 2 * Math.PI);
           ctx.fill();
@@ -551,12 +660,28 @@ export const generateProjectPdfReport = async (project, plans): Promise<Buffer> 
       }
     };
 
-    return new Promise((resolve, reject) => {
+    // Helper function to convert string to Buffer if needed
+    const ensureBuffer = (data: any): Buffer => {
+      if (Buffer.isBuffer(data)) {
+        return data;
+      }
+      if (typeof data === 'string') {
+        return Buffer.from(data);
+      }
+      throw new Error('Invalid data type for buffer conversion');
+    };
+
+    return new Promise<Buffer>((resolve, reject) => {
       try {
         const pdfDocGenerator = pdfMake.createPdf(docDefinition);
-        pdfDocGenerator.getBuffer((buffer) => {
-          console.log('Project PDF generated, buffer size:', buffer.length);
-          resolve(buffer);
+        pdfDocGenerator.getBuffer((result: any) => {
+          try {
+            const buffer = ensureBuffer(result);
+            console.log('Project PDF generated, buffer size:', buffer.length);
+            resolve(buffer);
+          } catch (error) {
+            reject(new Error('Failed to generate valid PDF buffer'));
+          }
         });
       } catch (error) {
         console.error('Error creating PDF:', error);
