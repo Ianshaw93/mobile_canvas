@@ -101,78 +101,114 @@ const PdfPicker = () => {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
-      // Save the original PDF data without modification
-      const base64PDF = await blobToBase64(file);
-      const projectId = selectedProjectId;
-      const planId = `${Date.now()}`;
-      
-      if (!projectId) {
-        console.error('No project selected');
-        return;
-      }
-
-      // Get current number of plans to determine the index
-      const currentPlans = selectedProject?.plans || [];
-      const newIndex = currentPlans.length;
-      const defaultName = `Building 1 Floor ${newIndex + 1}`;
-
-      console.log("projectId: ", projectId, "planId: ", planId, file.name);
-      addToOfflineQueue(file, projectId, planId);
-      
-      // Load the PDF to get its original dimensions
-      // @ts-ignore
-      const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
-      loadingTask.promise.then((pdf: any) => {
-        const pageNumber = 1;
-        pdf.getPage(pageNumber).then((page: any) => {
-          // Get the original viewport at scale 1.0
-          const originalViewport = page.getViewport({ scale: 1.0 });
-          
-          const canvas = pdfCanvasRef.current;
-          const context = canvas?.getContext('2d');
-          const displayScale = 1.5; // Scale for display thumbnail
-          const viewport = page.getViewport({ scale: displayScale });
-
-          if (canvas) {
-            // Set canvas dimensions for thumbnail
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            setCanvasDimensions({ width: canvas.width, height: canvas.height });
-
-            // Render PDF page into canvas for thumbnail
-            const renderContext = {
-              canvasContext: context,
-              viewport,
-            };
-            const renderTask = page.render(renderContext);
-            renderTask.promise.then(() => {
-              const thumbnail = canvas.toDataURL();
-
-              const newPlan = {
-                id: planId,
-                name: defaultName,
-                url: base64PDF, // Original PDF data
-                thumbnail, // Separate thumbnail for display
-                dimensions: {
-                  width: originalViewport.width,   // Store original PDF dimensions
-                  height: originalViewport.height,
-                  displayScale: displayScale       // Store the display scale
-                },
-                points: [],
-                images: [],
-                planId: planId,
-                projectId: projectId
-              };
-              addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
-              addPlan(projectId, newPlan);
-              setPreviewImage(true);
-              
-              setEditingPlanId(planId);
-              setEditingName(defaultName);
-            });
-          }
+      try {
+        console.log('Starting PDF upload process...');
+        console.log('File details:', {
+          name: file.name,
+          size: file.size,
+          type: file.type
         });
-      });
+
+        // Save the original PDF data without modification
+        const base64PDF = await blobToBase64(file);
+        console.log('PDF converted to base64, length:', base64PDF.length);
+        
+        const projectId = selectedProjectId;
+        const planId = `${Date.now()}`;
+        
+        if (!projectId) {
+          console.error('No project selected');
+          return;
+        }
+
+        // Get current number of plans to determine the index
+        const currentPlans = selectedProject?.plans || [];
+        const newIndex = currentPlans.length;
+        const defaultName = `Building 1 Floor ${newIndex + 1}`;
+
+        console.log("Adding to offline queue:", {
+          projectId,
+          planId,
+          fileName: file.name
+        });
+        
+        addToOfflineQueue(file, projectId, planId);
+        
+        // Load the PDF to get its original dimensions
+        console.log('Loading PDF for dimension calculation...');
+        // @ts-ignore
+        const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
+        loadingTask.promise.then((pdf: any) => {
+          const pageNumber = 1;
+          pdf.getPage(pageNumber).then((page: any) => {
+            // Get the original viewport at scale 1.0
+            const originalViewport = page.getViewport({ scale: 1.0 });
+            console.log('PDF dimensions:', {
+              width: originalViewport.width,
+              height: originalViewport.height
+            });
+            
+            const canvas = pdfCanvasRef.current;
+            const context = canvas?.getContext('2d');
+            const displayScale = 1.5; // Scale for display thumbnail
+            const viewport = page.getViewport({ scale: displayScale });
+
+            if (canvas) {
+              // Set canvas dimensions for thumbnail
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              setCanvasDimensions({ width: canvas.width, height: canvas.height });
+
+              // Render PDF page into canvas for thumbnail
+              const renderContext = {
+                canvasContext: context,
+                viewport,
+              };
+              const renderTask = page.render(renderContext);
+              renderTask.promise.then(() => {
+                const thumbnail = canvas.toDataURL();
+                console.log('Thumbnail generated successfully');
+
+                const newPlan = {
+                  id: planId,
+                  name: defaultName,
+                  url: base64PDF, // Original PDF data
+                  thumbnail, // Separate thumbnail for display
+                  dimensions: {
+                    width: originalViewport.width,   // Store original PDF dimensions
+                    height: originalViewport.height,
+                    displayScale: displayScale       // Store the display scale
+                  },
+                  points: [],
+                  images: [],
+                  planId: planId,
+                  projectId: projectId
+                };
+                console.log('Adding new plan to store:', {
+                  planId,
+                  name: defaultName,
+                  dimensions: newPlan.dimensions
+                });
+                
+                addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
+                addPlan(projectId, newPlan);
+                setPreviewImage(true);
+                
+                setEditingPlanId(planId);
+                setEditingName(defaultName);
+              }).catch((error: Error) => {
+                console.error('Error rendering PDF thumbnail:', error);
+              });
+            }
+          }).catch((error: Error) => {
+            console.error('Error getting PDF page:', error);
+          });
+        }).catch((error: Error) => {
+          console.error('Error loading PDF:', error);
+        });
+      } catch (error) {
+        console.error('Error in handleFileChange:', error);
+      }
     }
   };
 

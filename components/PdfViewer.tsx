@@ -29,13 +29,30 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
   // Render the PDF onto the canvas
   const renderPdf = async () => {
-    if (!pdfjs || !pdfCanvasRef.current || !plan?.url) return;
+    if (!pdfjs || !pdfCanvasRef.current || !plan?.url) {
+      console.error('Missing required data for PDF rendering:', {
+        hasPdfjs: !!pdfjs,
+        hasCanvas: !!pdfCanvasRef.current,
+        hasPlanUrl: !!plan?.url
+      });
+      return;
+    }
 
-    const pdfData = base64ToArrayBuffer(plan.url); // Convert base64 to ArrayBuffer
     try {
+      console.log('Starting PDF rendering process...');
+      console.log('Plan details:', {
+        id: plan.id,
+        name: plan.name,
+        urlLength: plan.url.length
+      });
+
+      const pdfData = base64ToArrayBuffer(plan.url); // Convert base64 to ArrayBuffer
+      console.log('Converted PDF data to ArrayBuffer, size:', pdfData.byteLength);
+
       // @ts-ignore
       const loadingTask = pdfjs.getDocument({ data: pdfData });
       const pdf = await loadingTask.promise;
+      console.log('PDF loaded successfully, pages:', pdf.numPages);
 
       // Render the first page of the PDF
       const page = await pdf.getPage(1);
@@ -48,24 +65,27 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
       }
 
       const viewport = page.getViewport({ scale: 1.5 }); // Adjust the scale for larger/smaller rendering
+      console.log('Viewport dimensions:', {
+        width: viewport.width,
+        height: viewport.height
+      });
 
       // Set canvas dimensions to match the PDF page
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       setCanvasDimensions({ width: viewport.width, height: viewport.height });
+
       // Render PDF page into the canvas context
       const renderContext = {
         canvasContext: context,
         viewport,
       };
 
+      console.log('Starting PDF page render...');
       const renderTask = page.render(renderContext);
       await renderTask.promise;
+      console.log('PDF page rendered successfully');
 
-      // // Convert the rendered PDF on the canvas to an image URL
-      // const imageUrl = canvas.toDataURL('image/png');
-      // setImageDataUrl(imageUrl); // Save the image URL in the state
-      // console.log('PDF rendered and converted to image');
     } catch (error) {
       console.error('Error rendering PDF:', error);
     }

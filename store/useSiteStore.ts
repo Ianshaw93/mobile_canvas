@@ -125,13 +125,26 @@ type State = {
 // Helper function to save plans to the filesystem
 const savePlansToFilesystem = async (projects: Project[]) => {
   try {
+    console.log('Saving projects to filesystem...');
     await requestFileSystemPermissions();
+    
+    // Log project data size
+    const projectData = JSON.stringify(projects);
+    console.log(`Project data size: ${projectData.length} bytes`);
+    
+    // Log number of plans and their names
+    projects.forEach(project => {
+      console.log(`Project ${project.name} has ${project.plans.length} plans:`, 
+        project.plans.map(p => p.name));
+    });
+
     await Filesystem.writeFile({
       path: 'projects.json',
-      data: JSON.stringify(projects),
+      data: projectData,
       directory: Directory.Data,
       encoding: Encoding.UTF8,
     });
+    console.log('Successfully saved projects to filesystem');
   } catch (error) {
     console.error('Error saving projects:', error);
     throw error;
@@ -141,16 +154,26 @@ const savePlansToFilesystem = async (projects: Project[]) => {
 // Helper function to load plans from the filesystem
 const loadPlansFromFilesystem = async (): Promise<Project[]> => {
   try {
+    console.log('Loading projects from filesystem...');
     await requestFileSystemPermissions();
     const result = await Filesystem.readFile({
       path: 'projects.json',
       directory: Directory.Data,
       encoding: Encoding.UTF8,
     });
-    // @ts-ignore
-    return JSON.parse(result.data);
+    
+    const projects = JSON.parse(result.data as string);
+    console.log(`Loaded ${projects.length} projects from filesystem`);
+    
+    // Log loaded project data
+    projects.forEach((project: Project) => {
+      console.log(`Loaded project ${project.name} with ${project.plans.length} plans:`,
+        project.plans.map((p: Plan) => p.name));
+    });
+    
+    return projects;
   } catch (error) {
-    console.error('Error loading projects from filesystem', error);
+    console.error('Error loading projects from filesystem:', error);
     return [];
   }
 };
