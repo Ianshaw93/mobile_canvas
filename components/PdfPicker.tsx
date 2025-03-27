@@ -8,6 +8,7 @@ import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import ReportButton from './ReportButton';
 import { sendProjectToBackend } from './ApiCalls';
+import DownloadProjectButton from './DownloadProjectButton';
 
 type Dimensions = {
   width: number;
@@ -418,7 +419,10 @@ const PdfPicker = () => {
       )}
 
       {selectedProjectId && (
-        <ReportButton projectId={selectedProjectId} />
+        <div className="mt-4 space-x-4">
+          <ReportButton projectId={selectedProjectId} />
+          <DownloadProjectButton projectId={selectedProjectId} />
+        </div>
       )}
     </>
   );
