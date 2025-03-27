@@ -11,12 +11,6 @@ const config: CapacitorConfig = {
     allowNavigation: ["*"],
     cleartext: true
   },
-  //   "server": {
-  //   "androidScheme": "http",
-  //   "allowNavigation": ["*"],
-  // iosScheme: 'myapp',
-  //   "cleartext": true
-  // },
   plugins: {
     Permissions: {
       requestedPermissions: [

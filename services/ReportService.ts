@@ -1,4 +1,3 @@
-import { generateProjectPdfReport } from '../utils/reportGenerator/pdfReport';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 interface Project {
@@ -246,32 +245,8 @@ export const generateProjectReport = async (project: Project, plans: Plan[]) => 
         }
       }
     }
-
-    // Generate and save the report PDF
-    const pdfBuffer = await generateProjectPdfReport(project, plans);
-    const reportFileName = `${folderName}/report.pdf`;
-    
-    // Create a data URL with the PDF content
-    const base64Data = pdfBuffer.toString('base64');
-    const dataUrl = `data:application/pdf;base64,${base64Data}`;
-    
-    await Filesystem.writeFile({
-      path: reportFileName,
-      data: dataUrl,
-      directory: Directory.Documents,
-      recursive: true
-    });
-    
-    // Get URI for the saved report file
-    const uriResult = await Filesystem.getUri({
-      directory: Directory.Documents,
-      path: reportFileName
-    });
-    
-    console.log(`Report saved to folder: ${folderName}`);
-    return uriResult.uri;
   } catch (error) {
-    console.error('Error in report service:', error);
+    console.error('Error generating project report:', error);
     throw error;
   }
 }; 
