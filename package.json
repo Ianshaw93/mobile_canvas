@@ -10,11 +10,12 @@
     "static": "next build && next export"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/android": "^6.1.2",
     "@capacitor/app": "^6.0.1",
     "@capacitor/browser": "^6.0.3",
     "@capacitor/camera": "^6.1.0",
-    "@capacitor/core": "^6.2.0",
+    "@capacitor/core": "^6.1.2",
     "@capacitor/filesystem": "^6.0.1",
     "@capacitor/ios": "^6.1.2",
     "@capacitor/network": "^6.0.2",
@@ -30,6 +31,7 @@
     "dropbox": "^10.34.0",
     "eslint": "8.47.0",
     "eslint-config-next": "13.4.17",
+    "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "next": "13.4.17",
     "next-auth": "^4.24.8",

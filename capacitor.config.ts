@@ -4,13 +4,20 @@ const config: CapacitorConfig = {
   appId: 'com.example.app',
   appName: 'mobile_canvas',
   webDir: 'out',
-  server: {
-    androidScheme: 'http',
-    iosScheme: 'myapp',
-    url: "http://192.168.0.14:3000",
-    allowNavigation: ["*"],
-    cleartext: true
+  // server: {
+  //   androidScheme: 'http',
+  //   iosScheme: 'myapp',
+  //   url: "http://192.168.0.14:3000",
+  //   allowNavigation: ["*"],
+  //   cleartext: true
+  // },
+  "server": {
+    "androidScheme": "http",
+    "allowNavigation": ["*"],
+  iosScheme: 'myapp',
+    "cleartext": true
   },
+
   plugins: {
     Permissions: {
       requestedPermissions: [
@@ -22,6 +29,21 @@ const config: CapacitorConfig = {
         "android.permission.INTERNET",
         "android.permission.CAMERA"
       ]
+    },
+    SQLite: {
+      iosDatabaseLocation: 'Library/SQLite',
+      iosIsEncryption: false,
+      iosBiometric: {
+        biometricAuth: false,
+        biometricTitle: "Biometric login for capacitor sqlite"
+      },
+      androidIsEncryption: false,
+      androidBiometric: {
+        biometricAuth: false,
+        biometricTitle: "Biometric login for capacitor sqlite",
+        biometricSubTitle: "Log in using your biometric"
+      },
+      androidDatabaseLocation: 'databases'
     }
   }
 };

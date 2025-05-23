@@ -3,12 +3,12 @@ import React, { useEffect, useState } from 'react'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
-import { sendData } from './ApiCalls';
-import { send } from 'process';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
+import { requestFileSystemPermissions } from '@/components/requestiPermission';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
-type Image = {
+type ImageData = {
+  data: string;
   key: string;
   pointId: string;
   url: string;
@@ -21,7 +21,7 @@ type Point = {
   id: string;
   x: number;
   y: number;
-  images: Image[];
+  images: ImageData[];
 };
 
 const requestFilesystemPermission = async () => {
@@ -49,7 +49,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
   // @ts-ignore
-  const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
+  const [imageArray, setImageArray] = useState<ImageData[]>([]);
   console.log("imageArray@top: ", imageArray)
 
   const [refreshKey, setRefreshKey] = useState(0);
@@ -58,50 +58,48 @@ const CameraLogic= ({selectedPoint, planId}) => {
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
 
     const saveImageToLocalStorage = async (photo: Photo, projectId: string, planId: string) => {
-      const base64Data = await readAsBase64(photo);
-      const fileName = new Date().getTime() + '.jpeg';
+      try {
+        // Check permissions first
+        const permissionStatus = await requestFileSystemPermissions();
+        if (!permissionStatus) {
+          throw new Error('Storage permission not granted');
+        }
 
-      // await uploadToDropbox(base64Data, fileName);
-      console.log("fileName @ save function: ", fileName)
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Data
-      });
-        // Convert Base64 to Blob
-    const byteCharacters = atob(base64Data.split(',')[1]);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'image/jpeg' });
+        const base64Data = await readAsBase64(photo);
+        const fileName = new Date().getTime() + '.jpeg';
 
-    // Create a File object from the Blob
-    // const fileName = new Date().getTime() + '.jpeg';
-    // check if online -> likely need to do this logic in apiCall?S
-    const file = new File([blob], fileName, { type: 'image/jpeg' });
-    addToOfflineQueue(file, projectId, planId);
+        // Optimize image size before saving
+        const optimizedBase64 = await optimizeImage(base64Data, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.8
+        });
 
-      //   // Check platform and request permissions for Android
-      // if (Capacitor.getPlatform() === 'android') {
-      //   const permissionGranted = await requestFilesystemPermission();
-      //   // @ts-ignore
-      //   if (!permissionGranted) {
-      //     console.error("Permission to write to external storage was denied");
-      //     return fileName;
-      //   }
-      // }
-      // await new Promise(resolve => setTimeout(resolve, 100)); // Small delay (e.g., 100ms)
-      
-      // await Filesystem.writeFile({
-      //   path: fileName,
-      //   data: base64Data,
-      //   directory: Directory.ExternalStorage//Documents
-      // });    
-      // console.log("filepath: ",Capacitor.convertFileSrc(`Documents/${fileName}`))
+        // Save the optimized image
+        await Filesystem.writeFile({
+          path: fileName,
+          data: optimizedBase64,
+          directory: Directory.Data
+        });
 
-      return fileName;
+        // Create a File object for offline queue
+        const byteCharacters = atob(optimizedBase64.split(',')[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'image/jpeg' });
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        
+        // Add to offline queue
+        // addToOfflineQueue(file, projectId, planId);
+
+        return fileName;
+      } catch (error) {
+        console.error('Error saving image:', error);
+        throw error;
+      }
     };
   
     const readAsBase64 = async (photo: Photo) => {
@@ -166,71 +164,90 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
   
     const takePicture = async () => {
-      const image = await Camera.getPhoto({
-        quality: 100,
-        allowEditing: false,
-        resultType: CameraResultType.Uri,
-        source: CameraSource.Camera,
-        correctOrientation: true,
-        width: 4096, // Set a high max width
-        height: 4096 // Set a high max height
-      });
-      console.log("image: ", image);
-      const projectId = getFirstPlanIdOrDatetime();;
-      if (image) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 80,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Camera,
+          correctOrientation: true,
+          width: 2048,
+          height: 2048
+        });
+
+        if (!image) return;
+
+        const projectId = getFirstPlanIdOrDatetime();
         const base64Data = await convertPhotoToBase64(image);
         const fileName = `${new Date().getTime()}.jpeg`;
-        // const fileName = await saveImageToLocalStorage(image, projectId, planId);
-        const filePath = `${Directory.Data}/${fileName}`;
-        console.log("fileName: ", fileName);
-        // Find the index of the point
         const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
-        await saveImageToFilesystem(base64Data.split(',')[1], fileName);
+
+        // Optimize image before saving
+        const optimizedBase64 = await optimizeImage(base64Data, {
+          maxWidth: 1024,
+          maxHeight: 1024,
+          quality: 0.7
+        });
+
+        // Save optimized image
+        await saveImageToFilesystem(optimizedBase64.split(',')[1], fileName);
 
         // Transform the Photo object into the Image type
-        const transformedImage: Image = {
+        const transformedImage: ImageData = {
           key: fileName,
           pointId: selectedPoint.id,
-          url: base64Data,
+          url: optimizedBase64,
           pointIndex: pointIndex,
           projectId: projectId,
-          planId: planId
+          planId: planId,
+          data: optimizedBase64 // Add the data field
         };
-  
-        // Save the image and update the state
-        setImageArray((prevImages) => [...prevImages, base64Data]);
+
+        // Update state with optimized image
+        setImageArray((prevImages) => [...prevImages, transformedImage]);
         await saveImageToLocalStorage(image, projectId, planId);
-  
+
         // Add the image to the pin
+        // @ts-ignore
         addImageToPin(planId, selectedPoint.id, transformedImage);
 
-        // Initialize empty comment for the new image
+        // Initialize empty comment
         setImageComments(prev => ({
           ...prev,
           [fileName]: ''
         }));
+      } catch (error) {
+        console.error('Error taking picture:', error);
+        alert('Failed to take picture. Please try again.');
       }
     };
   
-    const loadFileData = async (fileNames: Image[]) => {
-      console.log("fileNames: ", fileNames);
-      let temp = [];
-      for (let f of fileNames) {
-        const filePath = `${Directory.Data}/${f.key}`;
-        const readFile = await Filesystem.readFile({
-          directory: Directory.Data,
-          path: f.key
-        });
-        console.log("readFile: ", readFile);
-        temp.push({
-          ...f,
-          data: `data:image/jpeg;base64,${readFile.data}`,
-        });
+    const loadFileData = async (fileNames: ImageData[]) => {
+      try {
+        const temp: ImageData[] = [];
+        for (const f of fileNames) {
+          try {
+            const readFile = await Filesystem.readFile({
+              directory: Directory.Data,
+              path: f.key
+            });
+
+            // Create optimized image object
+            temp.push({
+              ...f,
+              data: `data:image/jpeg;base64,${readFile.data}`,
+            });
+
+            // Add small delay between reads to prevent memory issues
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error) {
+            console.error(`Error loading file ${f.key}:`, error);
+          }
+        }
+        setImageArray(temp);
+      } catch (error) {
+        console.error('Error loading files:', error);
       }
-      // @ts-ignore
-      setImageArray(temp);
-      console.log("temp: ", temp, "imageArray: ", imageArray);
-      // Do something with temp, e.g., set state
     }
     const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newComment = e.target.value;
@@ -303,7 +320,16 @@ const CameraLogic= ({selectedPoint, planId}) => {
       const updatedImageArray = [...imageArray];
       
       // Add the new image
-      updatedImageArray.push(base64Data);
+      updatedImageArray.push({
+        key: fileName,
+        pointId: selectedPoint.id,
+        url: base64Data,
+        pointIndex: 0,
+        // @ts-ignore
+        projectId: selectedProjectId,
+        planId: planId,
+        data: base64Data
+      });
       
       // Update state with the new array
       setImageArray(updatedImageArray);
@@ -319,7 +345,66 @@ const CameraLogic= ({selectedPoint, planId}) => {
       setRefreshKey(prev => prev + 1);
     };
 
-    
+    // Optimize image function with better memory management
+    const optimizeImage = async (base64: string, options: { maxWidth: number; maxHeight: number; quality: number }) => {
+      return new Promise<string>((resolve) => {
+        const img = new Image();
+        
+        // Add error handling
+        img.onerror = () => {
+          console.error('Error loading image for optimization');
+          resolve(base64); // Return original if optimization fails
+        };
+
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            // Calculate new dimensions while maintaining aspect ratio
+            if (width > options.maxWidth) {
+              height = Math.round((options.maxWidth * height) / width);
+              width = options.maxWidth;
+            }
+            if (height > options.maxHeight) {
+              width = Math.round((options.maxHeight * width) / height);
+              height = options.maxHeight;
+            }
+
+            // Set canvas size
+            canvas.width = width;
+            canvas.height = height;
+
+            // Draw image with better quality settings
+            const ctx = canvas.getContext('2d', { alpha: false });
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(img, 0, 0, width, height);
+              
+              // Get optimized image
+              const optimizedDataUrl = canvas.toDataURL('image/jpeg', options.quality);
+              
+              // Clean up
+              canvas.width = 1;
+              canvas.height = 1;
+              img.src = '';
+              
+              resolve(optimizedDataUrl);
+            } else {
+              resolve(base64);
+            }
+          } catch (error) {
+            console.error('Error optimizing image:', error);
+            resolve(base64);
+          }
+        };
+
+        // Set source after setting up handlers
+        img.src = base64;
+      });
+    };
 
     return (
       <div>
@@ -329,8 +414,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
         <div>
           {imageArray.map((img, index) => {
             const imageKey = selectedPoint?.images?.[index]?.key || `image-${index}`;
-            // @ts-ignore 
-            const src = img.data || img;
+            const src = img.data || img.url || ''; // Provide empty string as fallback
             return (
               <div key={imageKey} className="mb-6 p-4 border rounded-lg">
                 <div className="flex justify-between items-start mb-2">

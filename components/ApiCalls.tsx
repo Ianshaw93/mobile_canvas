@@ -9,23 +9,23 @@ const server_urls = {
   }
   var subEndpoint = server_urls.localhost;
 
-// get access token for dropbox
-export const loginToDropbox = async () => {
-  let endpoint = `${subEndpoint}/auth/dropbox`;
-  const offlineQueue = useSiteStore.getState().offlineQueue;
-  console.log("Files in Offline Queue:");
-  offlineQueue.forEach(({file}, index) => {
-    console.log(`file: ${index + 1}. ${file.name}`);
-  });
-  try {
-    // Open the Dropbox OAuth flow in the system's browser
-    await Browser.open({ url: endpoint });
+// // get access token for dropbox
+// export const loginToDropbox = async () => {
+//   let endpoint = `${subEndpoint}/auth/dropbox`;
+//   const offlineQueue = useSiteStore.getState().offlineQueue;
+//   console.log("Files in Offline Queue:");
+//   offlineQueue.forEach(({file}, index) => {
+//     console.log(`file: ${index + 1}. ${file.name}`);
+//   });
+//   try {
+//     // Open the Dropbox OAuth flow in the system's browser
+//     await Browser.open({ url: endpoint });
 
-    console.log("Dropbox OAuth flow opened in browser.");
-  } catch (err) {
-    console.log("Error opening Dropbox OAuth flow: ", err);
-  }
-}
+//     console.log("Dropbox OAuth flow opened in browser.");
+//   } catch (err) {
+//     console.log("Error opening Dropbox OAuth flow: ", err);
+//   }
+// }
 
 // get access token for dropbox
 export const getAccessToken = async () => {
@@ -101,87 +101,6 @@ const saveBlobAsBase64 = async (blob: Blob, fileName: string) => {
 
       reader.readAsArrayBuffer(blob);
   });
-};
-  // @ts-ignore
-  export const sendData = async (file: File, projectId: string, planId: string) => {
-      const { accessToken } = useSiteStore.getState();
-      console.log('Starting sendData with token:', !!accessToken);
-
-      try {
-        console.log('Attempting to write file:', JSON.stringify(file, null, 2));
-
-        const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Dropbox-API-Arg': JSON.stringify({
-              path: `/${projectId}/${planId}/${file.name}`,
-              mode: 'add',
-              autorename: true,
-              mute: false,
-            }),
-            'Content-Type': 'application/octet-stream',
-          },
-          body: file,
-        });
-
-        console.log('Dropbox response:', JSON.stringify(response, null, 2));
-
-        const data = await response.json();
-        console.log('Dropbox data:', data);
-
-        return response.ok;
-      } catch (error) {
-        console.error('Error in sendData:', {
-          message: (error as Error).message,
-          type: (error as Error).name,
-          stack: (error as Error).stack
-        });
-        throw error;
-      }
-  };
-
-    // Function to send JSON data as a file to Dropbox
-export const sendJsonAsFileToDropbox = async (jsonData: object, fileName: string, projectId: string) => {
-  const { accessToken } = useSiteStore.getState();
-
-  if (!accessToken) {
-    console.error('Access token not available. Please authenticate first.');
-    return;
-  }
-
-  // Convert the JSON object to a string
-  const jsonString = JSON.stringify(jsonData);
-
-  // Create a Blob from the JSON string
-  const jsonBlob = new Blob([jsonString], { type: 'application/json' });
-
-  try {
-    // Use the Dropbox API to upload the file
-    const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Dropbox-API-Arg': JSON.stringify({
-          path: `/${projectId}/${fileName}`,
-          mode: 'add',
-          autorename: true,
-          mute: false,
-        }),
-        'Content-Type': 'application/octet-stream',
-      },
-      body: jsonBlob,
-    });
-
-    const data = await response.json();
-    if (response.ok) {
-      console.log('JSON file uploaded successfully:', data);
-    } else {
-      console.error('Error uploading JSON file:', data.error_summary);
-    }
-  } catch (error) {
-    console.error('Failed to upload JSON file to Dropbox:', error);
-  }
 };
    
     // @ts-ignore
