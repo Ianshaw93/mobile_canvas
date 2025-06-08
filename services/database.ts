@@ -1,62 +1,25 @@
+import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
-import { SQLiteConnection, SQLiteDBConnection, CapacitorSQLite } from '@capacitor-community/sqlite';
-import { devStorage } from './devStorage';
-
-export interface Project {
-  id: string;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-  plans: Plan[];
-}
-
-export interface Plan {
-  id: string;
-  projectId: string;
-  name: string;
-  url: string;
-  planId: string;
-  points: Point[];
-  images: Image[];
-  content: {
-    type: string;
-    data: string;
-  };
-}
-
-export interface Point {
-  id: string;
-  planId: string;
-  x: number;
-  y: number;
-  comment?: string;
-  images: Image[];
-}
-
-export interface Image {
-  id: string;
-  pointId: string;
-  url: string;
-  pointIndex: number;
-  projectId: string;
-  planId: string;
-  comment?: string;
-}
 
 // Database types
 export interface DBProject {
   id: string;
   name: string;
-  created_at: number;
-  updated_at: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DBPlan {
   id: string;
   project_id: string;
   name: string;
-  created_at: number;
-  updated_at: number;
+  url: string;
+  thumbnail: string;
+  width: number;
+  height: number;
+  display_scale: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DBPoint {
@@ -64,323 +27,267 @@ export interface DBPoint {
   plan_id: string;
   x: number;
   y: number;
-  created_at: number;
-  updated_at: number;
+  comment?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DBImage {
   id: string;
   point_id: string;
-  path: string;
-  created_at: number;
-  updated_at: number;
+  url: string;
+  comment?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-// Helper functions to convert between store and DB types
-export function dbProjectToStore(dbProject: DBProject): Project {
-  return {
-    id: dbProject.id,
-    name: dbProject.name,
-    createdAt: dbProject.created_at,
-    updatedAt: dbProject.updated_at,
-    plans: []
-  };
-}
-
-export function storeProjectToDB(project: Project): DBProject {
-  return {
-    id: project.id,
-    name: project.name,
-    created_at: project.createdAt,
-    updated_at: project.updatedAt
-  };
-}
-
-export function dbPlanToStore(dbPlan: DBPlan): Plan {
-  return {
-    id: dbPlan.id,
-    projectId: dbPlan.project_id,
-    name: dbPlan.name,
-    url: '',
-    planId: dbPlan.id,
-    points: [],
-    images: [],
-    content: {
-      type: 'pdf',
-      data: ''
-    }
-  };
-}
-
-export function storePlanToDB(plan: Plan): DBPlan {
-  return {
-    id: plan.id,
-    project_id: plan.projectId,
-    name: plan.name,
-    created_at: Date.now(),
-    updated_at: Date.now()
-  };
-}
-
-export function dbPointToStore(dbPoint: DBPoint): Point {
-  return {
-    id: dbPoint.id,
-    planId: dbPoint.plan_id,
-    x: dbPoint.x,
-    y: dbPoint.y,
-    images: []
-  };
-}
-
-export function storePointToDB(point: Point): DBPoint {
-  return {
-    id: point.id,
-    plan_id: point.planId,
-    x: point.x,
-    y: point.y,
-    created_at: Date.now(),
-    updated_at: Date.now()
-  };
-}
-
-export function dbImageToStore(dbImage: DBImage): Image {
-  return {
-    id: dbImage.id,
-    pointId: dbImage.point_id,
-    url: dbImage.path,
-    pointIndex: 0,
-    projectId: '',
-    planId: ''
-  };
-}
-
-export function storeImageToDB(image: Image): DBImage {
-  return {
-    id: image.id,
-    point_id: image.pointId,
-    path: image.url,
-    created_at: Date.now(),
-    updated_at: Date.now()
-  };
-}
-
+// Database singleton
 class Database {
-  private sqlite: SQLiteConnection;
-  private db: SQLiteDBConnection | null = null;
-  private isInitialized = false;
+  private static instance: Database;
+  private dbConnection: SQLiteDBConnection | null = null;
+  private readonly DB_NAME = 'mobile_canvas_db';
+  private readonly isNative = Capacitor.isNativePlatform();
 
-  constructor() {
-    this.sqlite = new SQLiteConnection(CapacitorSQLite);
+  private constructor() {}
+
+  static getInstance(): Database {
+    if (!Database.instance) {
+      Database.instance = new Database();
+    }
+    return Database.instance;
   }
 
-  async initialize(): Promise<SQLiteDBConnection> {
-    if (this.isInitialized) {
-      console.log('[Database] Already initialized, skipping...');
-      return this.db!;
+  async initialize(): Promise<void> {
+    if (!this.isNative) {
+      throw new Error('Database is only available in native mode');
+    }
+    await this.getDBConnection();
+  }
+
+  private async getDBConnection(): Promise<SQLiteDBConnection> {
+    if (this.dbConnection) {
+      return this.dbConnection;
     }
 
-    try {
-      console.log('[Database] Starting initialization...');
-      const platform = Capacitor.getPlatform();
-      const isDev = process.env.NODE_ENV === 'development';
+    if (!this.isNative) {
+      throw new Error('Database is only available in native mode');
+    }
+
+    const sqlite = CapacitorSQLite;
+    const sqliteConnection = new SQLiteConnection(sqlite);
+    
+    // Check if connection exists
+    const isConnection = await sqliteConnection.isConnection(this.DB_NAME, false);
+    if (isConnection.result) {
+      // Get existing connection
+      this.dbConnection = await sqliteConnection.retrieveConnection(this.DB_NAME, false);
+    } else {
+      // Create new connection
+      this.dbConnection = await sqliteConnection.createConnection(
+        this.DB_NAME,
+        false,
+        'no-encryption',
+        1,
+        false
+      );
+      await this.dbConnection.open();
       
-      console.log('[Database] Platform:', platform);
-      console.log('[Database] Development mode:', isDev);
-
-      if (platform === 'web' || isDev) {
-        console.log('[Database] Using dev storage');
-        await devStorage.initialize();
-        this.isInitialized = true;
-        return this.db!;
-      }
-
-      // For native platforms, use SQLite
-      console.log('[Database] Using SQLite');
-      try {
-        // Try to close any existing connection first
-        try {
-          await this.sqlite.closeConnection('mobile_canvas_db', false);
-          console.log('[Database] Closed existing connection');
-        } catch (closeError) {
-          console.log('[Database] No existing connection to close');
-        }
-
-        // Create new connection
-        this.db = await this.sqlite.createConnection(
-          'mobile_canvas_db',
-          false,
-          'no-encryption',
-          1,
-          false
-        );
-
-        await this.db.open();
-        console.log('[Database] Connection opened successfully');
-
-        // Create tables if they don't exist
-        await this.createTables();
-        console.log('[Database] Tables created/verified successfully');
-        
-        this.isInitialized = true;
-        return this.db;
-      } catch (error) {
-        console.error('[Database] SQLite initialization error:', error);
-        // Fallback to dev storage if SQLite fails
-        console.log('[Database] Falling back to dev storage');
-        await devStorage.initialize();
-        this.isInitialized = true;
-        return this.db!;
-      }
-    } catch (error) {
-      console.error('[Database] Initialization error:', error);
-      throw error;
+      // Create tables if they don't exist
+      await this.createTables();
     }
+    
+    return this.dbConnection;
   }
 
   private async createTables(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    const db = await this.getDBConnection();
 
-    await this.db.execute(`
+    // Create projects table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
-    await this.db.execute(`
+    // Create plans table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS plans (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
         name TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        thumbnail TEXT NOT NULL,
+        width REAL NOT NULL,
+        height REAL NOT NULL,
+        display_scale REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
-      )
+      );
     `);
 
-    await this.db.execute(`
+    // Create points table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS points (
         id TEXT PRIMARY KEY,
         plan_id TEXT NOT NULL,
         x REAL NOT NULL,
         y REAL NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
+        comment TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY (plan_id) REFERENCES plans (id) ON DELETE CASCADE
-      )
+      );
     `);
 
-    await this.db.execute(`
+    // Create images table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS images (
         id TEXT PRIMARY KEY,
         point_id TEXT NOT NULL,
-        path TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        comment TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         FOREIGN KEY (point_id) REFERENCES points (id) ON DELETE CASCADE
-      )
+      );
     `);
   }
 
   // Project operations
-  async createProject(project: Project): Promise<void> {
-    if (process.env.NODE_ENV === 'development') {
-      return devStorage.createProject(storeProjectToDB(project));
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const dbProject = storeProjectToDB(project);
-    await this.db.run(
+  async createProject(project: DBProject): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
       'INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-      [dbProject.id, dbProject.name, dbProject.created_at, dbProject.updated_at]
+      [project.id, project.name, project.created_at, project.updated_at]
     );
   }
 
-  async getProject(id: string): Promise<Project | undefined> {
-    if (process.env.NODE_ENV === 'development') {
-      const dbProject = await devStorage.getProject(id);
-      return dbProject ? dbProjectToStore(dbProject) : undefined;
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const result = await this.db.query(
-      'SELECT * FROM projects WHERE id = ?',
-      [id]
-    );
-    const dbProject = result.values?.[0] as DBProject | undefined;
-    return dbProject ? dbProjectToStore(dbProject) : undefined;
+  async getProject(id: string): Promise<DBProject | undefined> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM projects WHERE id = ?', [id]);
+    return result.values?.[0] as DBProject | undefined;
   }
 
-  async getAllProjects(): Promise<Project[]> {
-    if (process.env.NODE_ENV === 'development') {
-      const dbProjects = await devStorage.getAllProjects();
-      return dbProjects.map(dbProjectToStore);
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const result = await this.db.query('SELECT * FROM projects');
-    const dbProjects = result.values as DBProject[] || [];
-    return dbProjects.map(dbProjectToStore);
-  }
-
-  async getPlansByProject(projectId: string, page: number = 1, pageSize: number = 20): Promise<Plan[]> {
-    if (process.env.NODE_ENV === 'development') {
-      const dbPlans = await devStorage.getPlansByProject(projectId, page, pageSize);
-      return dbPlans.map(dbPlanToStore);
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const offset = (page - 1) * pageSize;
-    const result = await this.db.query(
-      'SELECT * FROM plans WHERE project_id = ? LIMIT ? OFFSET ?',
-      [projectId, pageSize, offset]
-    );
-    const dbPlans = result.values as DBPlan[] || [];
-    return dbPlans.map(dbPlanToStore);
-  }
-
-  async getPointsByPlan(planId: string, page: number = 1, pageSize: number = 20): Promise<Point[]> {
-    if (process.env.NODE_ENV === 'development') {
-      const dbPoints = await devStorage.getPointsByPlan(planId, page, pageSize);
-      return dbPoints.map(dbPointToStore);
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const offset = (page - 1) * pageSize;
-    const result = await this.db.query(
-      'SELECT * FROM points WHERE plan_id = ? LIMIT ? OFFSET ?',
-      [planId, pageSize, offset]
-    );
-    const dbPoints = result.values as DBPoint[] || [];
-    return dbPoints.map(dbPointToStore);
-  }
-
-  async getImagesByPoint(pointId: string, page: number = 1, pageSize: number = 20): Promise<Image[]> {
-    if (process.env.NODE_ENV === 'development') {
-      const dbImages = await devStorage.getImagesByPoint(pointId, page, pageSize);
-      return dbImages.map(dbImageToStore);
-    }
-
-    if (!this.db) throw new Error('Database not initialized');
-    const offset = (page - 1) * pageSize;
-    const result = await this.db.query(
-      'SELECT * FROM images WHERE point_id = ? LIMIT ? OFFSET ?',
-      [pointId, pageSize, offset]
-    );
-    const dbImages = result.values as DBImage[] || [];
-    return dbImages.map(dbImageToStore);
+  async getAllProjects(): Promise<DBProject[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM projects ORDER BY created_at DESC');
+    return result.values as DBProject[] || [];
   }
 
   async deleteProject(id: string): Promise<void> {
-    if (process.env.NODE_ENV === 'development') {
-      return devStorage.deleteProject(id);
+    const db = await this.getDBConnection();
+    await db.run('DELETE FROM projects WHERE id = ?', [id]);
+  }
+
+  // Plan operations
+  async createPlan(plan: DBPlan): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
+      'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.created_at, plan.updated_at]
+    );
+  }
+
+  async getPlansByProject(projectId: string): Promise<DBPlan[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+    return result.values as DBPlan[] || [];
+  }
+
+  async deletePlan(id: string): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run('DELETE FROM plans WHERE id = ?', [id]);
+  }
+
+  async updatePlan(id: string, updates: Partial<DBPlan>): Promise<void> {
+    const db = await this.getDBConnection();
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) {
+      setClauses.push('name = ?');
+      values.push(updates.name);
+    }
+    if (updates.url !== undefined) {
+      setClauses.push('url = ?');
+      values.push(updates.url);
+    }
+    if (updates.width !== undefined) {
+      setClauses.push('width = ?');
+      values.push(updates.width);
+    }
+    if (updates.height !== undefined) {
+      setClauses.push('height = ?');
+      values.push(updates.height);
     }
 
-    if (!this.db) throw new Error('Database not initialized');
-    await this.db.run('DELETE FROM projects WHERE id = ?', [id]);
+    setClauses.push('updated_at = ?');
+    values.push(new Date().toISOString());
+    values.push(id);
+
+    const query = `UPDATE plans SET ${setClauses.join(', ')} WHERE id = ?`;
+    await db.run(query, values);
+  }
+
+  // Point operations
+  async createPoint(point: DBPoint): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
+      'INSERT INTO points (id, plan_id, x, y, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [point.id, point.plan_id, point.x, point.y, point.comment || null, point.created_at, point.updated_at]
+    );
+  }
+
+  async getPointsByPlan(planId: string): Promise<DBPoint[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM points WHERE plan_id = ? ORDER BY created_at DESC', [planId]);
+    return result.values as DBPoint[] || [];
+  }
+
+  async updatePoint(point: DBPoint): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
+      'UPDATE points SET x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [point.x, point.y, point.comment || null, point.updated_at, point.id]
+    );
+  }
+
+  async deletePoint(id: string): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run('DELETE FROM points WHERE id = ?', [id]);
+  }
+
+  // Image operations
+  async createImage(image: DBImage): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
+      'INSERT INTO images (id, point_id, url, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [image.id, image.point_id, image.url, image.comment || null, image.created_at, image.updated_at]
+    );
+  }
+
+  async getImagesByPoint(pointId: string): Promise<DBImage[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM images WHERE point_id = ? ORDER BY created_at DESC', [pointId]);
+    return result.values as DBImage[] || [];
+  }
+
+  async updateImage(image: DBImage): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run(
+      'UPDATE images SET url = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [image.url, image.comment || null, image.updated_at, image.id]
+    );
+  }
+
+  async deleteImage(id: string): Promise<void> {
+    const db = await this.getDBConnection();
+    await db.run('DELETE FROM images WHERE id = ?', [id]);
   }
 }
 
-export const database = new Database(); 
+export const database = Database.getInstance(); 
