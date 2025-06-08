@@ -48,8 +48,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const updateProjectImages = useSiteStore((state) => state.updateProjectImages);
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
-  // @ts-ignore
-  const [imageArray, setImageArray] = useState<string[]>(selectedPoint?.images.map(img => img.url) || []);
+  // Update the type to match the image data structure
+  const [imageArray, setImageArray] = useState<Array<{ data: string; key: string; pointId: string; url: string; pointIndex: number; projectId: string; planId: string; }>>([]);
   console.log("imageArray@top: ", imageArray)
 
   const [refreshKey, setRefreshKey] = useState(0);
@@ -57,8 +57,11 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const platform = Capacitor.getPlatform();
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
 
-    const saveImageToLocalStorage = async (photo: Photo, projectId: string, planId: string) => {
+    const saveImageToLocalStorage = async (photo: Photo, projectId: string, planId: string): Promise<string> => {
       const base64Data = await readAsBase64(photo);
+      if (!base64Data) {
+        throw new Error('Failed to read photo as base64');
+      }
       const fileName = new Date().getTime() + '.jpeg';
 
       // await uploadToDropbox(base64Data, fileName);
@@ -78,43 +81,38 @@ const CameraLogic= ({selectedPoint, planId}) => {
     const blob = new Blob([byteArray], { type: 'image/jpeg' });
 
     // Create a File object from the Blob
-    // const fileName = new Date().getTime() + '.jpeg';
-    // check if online -> likely need to do this logic in apiCall?S
     const file = new File([blob], fileName, { type: 'image/jpeg' });
     addToOfflineQueue(file, projectId, planId);
 
-      //   // Check platform and request permissions for Android
-      // if (Capacitor.getPlatform() === 'android') {
-      //   const permissionGranted = await requestFilesystemPermission();
-      //   // @ts-ignore
-      //   if (!permissionGranted) {
-      //     console.error("Permission to write to external storage was denied");
-      //     return fileName;
-      //   }
-      // }
-      // await new Promise(resolve => setTimeout(resolve, 100)); // Small delay (e.g., 100ms)
-      
-      // await Filesystem.writeFile({
-      //   path: fileName,
-      //   data: base64Data,
-      //   directory: Directory.ExternalStorage//Documents
-      // });    
-      // console.log("filepath: ",Capacitor.convertFileSrc(`Documents/${fileName}`))
-
-      return fileName;
+    return fileName;
     };
   
-    const readAsBase64 = async (photo: Photo) => {
-      const response = await fetch(photo.webPath!);
+    const readAsBase64 = async (photo: Photo): Promise<string> => {
+      if (!photo.webPath) {
+        throw new Error('No webPath available for photo');
+      }
+      const response = await fetch(photo.webPath);
+      if (!response.ok) {
+        throw new Error('Failed to fetch photo');
+      }
       const blob = await response.blob();
-      return await convertBlobToBase64(blob) as string;
+      const base64 = await convertBlobToBase64(blob);
+      if (!base64 || typeof base64 !== 'string') {
+        throw new Error('Failed to convert blob to base64');
+      }
+      return base64;
     };
   
-    const convertBlobToBase64 = (blob: Blob) => new Promise((resolve, reject) => {
+    const convertBlobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = reject;
       reader.onload = () => {
-        resolve(reader.result);
+        const result = reader.result;
+        if (typeof result !== 'string') {
+          reject(new Error('Failed to convert blob to base64 string'));
+          return;
+        }
+        resolve(result);
       };
       reader.readAsDataURL(blob);
     });
@@ -132,9 +130,16 @@ const CameraLogic= ({selectedPoint, planId}) => {
       }
     };
 
-    const convertPhotoToBase64 = async (photo: Photo) => {
+    const convertPhotoToBase64 = async (photo: Photo): Promise<string> => {
+      if (!photo.webPath) {
+        throw new Error('No webPath available for photo');
+      }
+
       try {
-        const response = await fetch(photo.webPath!);
+        const response = await fetch(photo.webPath);
+        if (!response.ok) {
+          throw new Error('Failed to fetch photo');
+        }
         const blob = await response.blob();
         
         // Create a canvas to handle the image
@@ -142,21 +147,32 @@ const CameraLogic= ({selectedPoint, planId}) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
+        if (!ctx) {
+          throw new Error('Failed to get canvas context');
+        }
+
         return new Promise<string>((resolve, reject) => {
           img.onload = () => {
-            // Set canvas size to match image
-            canvas.width = img.width;
-            canvas.height = img.height;
-            
-            // Draw image with best quality
-            ctx?.drawImage(img, 0, 0);
-            
-            // Get as high quality JPEG
-            const quality = 1.0; // Maximum quality
-            const dataUrl = canvas.toDataURL('image/jpeg', quality);
-            resolve(dataUrl);
+            try {
+              // Set canvas size to match image
+              canvas.width = img.width;
+              canvas.height = img.height;
+              
+              // Draw image with best quality
+              ctx.drawImage(img, 0, 0);
+              
+              // Get as high quality JPEG
+              const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+              if (!dataUrl) {
+                reject(new Error('Failed to convert image to data URL'));
+                return;
+              }
+              resolve(dataUrl);
+            } catch (error) {
+              reject(error);
+            }
           };
-          img.onerror = reject;
+          img.onerror = () => reject(new Error('Failed to load image'));
           img.src = URL.createObjectURL(blob);
         });
       } catch (error) {
@@ -176,11 +192,18 @@ const CameraLogic= ({selectedPoint, planId}) => {
         height: 4096 // Set a high max height
       });
       console.log("image: ", image);
-      const projectId = getFirstPlanIdOrDatetime();;
+      const projectId = getFirstPlanIdOrDatetime();
+      if (!projectId) {
+        console.error('No project ID available');
+        return;
+      }
       if (image) {
         const base64Data = await convertPhotoToBase64(image);
+        if (!base64Data) {
+          console.error('Failed to convert photo to base64');
+          return;
+        }
         const fileName = `${new Date().getTime()}.jpeg`;
-        // const fileName = await saveImageToLocalStorage(image, projectId, planId);
         const filePath = `${Directory.Data}/${fileName}`;
         console.log("fileName: ", fileName);
         // Find the index of the point
@@ -198,11 +221,14 @@ const CameraLogic= ({selectedPoint, planId}) => {
         };
   
         // Save the image and update the state
-        setImageArray((prevImages) => [...prevImages, base64Data]);
+        setImageArray((prevImages) => [...prevImages, { data: base64Data, key: fileName, pointId: selectedPoint.id, url: base64Data, pointIndex: pointIndex, projectId: projectId, planId: planId }]);
         await saveImageToLocalStorage(image, projectId, planId);
   
         // Add the image to the pin
         addImageToPin(planId, selectedPoint.id, transformedImage);
+
+        // Update project images
+        updateProjectImages(projectId, transformedImage);
 
         // Initialize empty comment for the new image
         setImageComments(prev => ({
@@ -214,23 +240,37 @@ const CameraLogic= ({selectedPoint, planId}) => {
   
     const loadFileData = async (fileNames: Image[]) => {
       console.log("fileNames: ", fileNames);
-      let temp = [];
+      let temp: Array<{ data: string; key: string; pointId: string; url: string; pointIndex: number; projectId: string; planId: string; }> = [];
       for (let f of fileNames) {
-        const filePath = `${Directory.Data}/${f.key}`;
-        const readFile = await Filesystem.readFile({
-          directory: Directory.Data,
-          path: f.key
-        });
-        console.log("readFile: ", readFile);
-        temp.push({
-          ...f,
-          data: `data:image/jpeg;base64,${readFile.data}`,
-        });
+        try {
+          // If the image already has a data URL, use it directly
+          if (f.url.startsWith('data:')) {
+            temp.push({
+              ...f,
+              data: f.url
+            });
+          } else {
+            // Otherwise, try to read from filesystem
+            const readFile = await Filesystem.readFile({
+              directory: Directory.Data,
+              path: f.key
+            });
+            temp.push({
+              ...f,
+              data: `data:image/jpeg;base64,${readFile.data}`
+            });
+          }
+        } catch (error) {
+          console.error('Error loading image:', error);
+          // If there's an error, try to use the URL directly
+          temp.push({
+            ...f,
+            data: f.url
+          });
+        }
       }
-      // @ts-ignore
       setImageArray(temp);
       console.log("temp: ", temp, "imageArray: ", imageArray);
-      // Do something with temp, e.g., set state
     }
     const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newComment = e.target.value;
@@ -295,28 +335,57 @@ const CameraLogic= ({selectedPoint, planId}) => {
     }, [selectedPoint]);  
 
     const handlePhotoTaken = async (photo: Photo) => {
-      const base64Data = await convertPhotoToBase64(photo);
-      // @ts-ignore
-      const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
-      
-      // Create a copy of the current imageArray
-      const updatedImageArray = [...imageArray];
-      
-      // Add the new image
-      updatedImageArray.push(base64Data);
-      
-      // Update state with the new array
-      setImageArray(updatedImageArray);
-      
-      // Save to filesystem
-      await saveImageToFilesystem(base64Data.split(',')[1], fileName);
-      
-      // Update state via Zustand
-      // @ts-ignore
-      updateProjectImages(selectedProjectId, base64Data);
-      
-      // Force a re-render
-      setRefreshKey(prev => prev + 1);
+      try {
+        const base64Data = await convertPhotoToBase64(photo);
+        if (!base64Data) {
+          throw new Error('Failed to convert photo to base64');
+        }
+        const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
+        
+        // Create a copy of the current imageArray
+        const updatedImageArray = [...imageArray];
+        
+        // Add the new image
+        updatedImageArray.push({ 
+          data: base64Data, 
+          key: fileName, 
+          pointId: selectedPoint.id, 
+          url: base64Data, 
+          pointIndex: 0, 
+          projectId: selectedProjectId, 
+          planId: planId 
+        });
+        
+        // Update state with the new array
+        setImageArray(updatedImageArray);
+        
+        // Save to filesystem
+        await saveImageToFilesystem(base64Data.split(',')[1], fileName);
+        
+        // Update state via Zustand
+        const transformedImage: Image = {
+          key: fileName,
+          pointId: selectedPoint.id,
+          url: base64Data,
+          pointIndex: 0,
+          projectId: selectedProjectId,
+          planId: planId
+        };
+        
+        // Add the image to the pin
+        addImageToPin(planId, selectedPoint.id, transformedImage);
+        
+        // Update project images
+        updateProjectImages(selectedProjectId, transformedImage);
+        
+        // Initialize empty comment for the new image
+        setImageComments(prev => ({
+          ...prev,
+          [fileName]: ''
+        }));
+      } catch (error) {
+        console.error('Error handling photo:', error);
+      }
     };
 
     
@@ -328,9 +397,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
         </button>
         <div>
           {imageArray.map((img, index) => {
-            const imageKey = selectedPoint?.images?.[index]?.key || `image-${index}`;
-            // @ts-ignore 
-            const src = img.data || img;
+            const imageKey = img.key || `image-${index}`;
             return (
               <div key={imageKey} className="mb-6 p-4 border rounded-lg">
                 <div className="flex justify-between items-start mb-2">
@@ -342,7 +409,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
                     Delete Image
                   </button>
                 </div>
-                <img src={src} alt={`Image ${index + 1}`} className="max-w-[90%] max-h-sm mb-2" />
+                <img src={img.data} alt={`Image ${index + 1}`} className="max-w-[90%] max-h-sm mb-2" />
                 <textarea
                   placeholder={`Comment for image ${index + 1}...`}
                   value={imageComments[imageKey] || ''}

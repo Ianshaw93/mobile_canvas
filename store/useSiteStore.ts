@@ -71,6 +71,7 @@ type Project = {
   name: string;
   createdAt: number;
   plans: Plan[];
+  images: Image[];
 };
 
 type State = {
@@ -116,7 +117,7 @@ type State = {
   deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => void;
   addProject: (name: string) => void;
   getProject: (id: string) => Project | undefined;
-  updateProjectImages: (projectId: string, newImage: string) => void;
+  updateProjectImages: (projectId: string, newImage: Image) => void;
   updatePlanName: (projectId: string, planId: string, name: string) => void;
   generateReport: (projectId: string) => Promise<string>;
 };
@@ -315,7 +316,8 @@ const useSiteStore = create<State>((set, get) => ({
         id: `proj_${Date.now()}`,
         name,
         createdAt: Date.now(),
-        plans: []
+        plans: [],
+        images: []
       };
       const updatedProjects = [...state.projects, newProject];
       savePlansToFilesystem(updatedProjects); // Update save function to handle projects
@@ -548,13 +550,12 @@ const useSiteStore = create<State>((set, get) => ({
       throw error;
     }
   },
-  updateProjectImages: (projectId: string, newImage: string) => 
+  updateProjectImages: (projectId: string, newImage: Image) => 
     set((state) => {
       const updatedProjects = state.projects.map(p => {
         if (p.id === projectId) {
           return {
             ...p,
-            // @ts-ignore
             images: [...p.images, newImage]
           };
         }
@@ -594,75 +595,28 @@ const useSiteStore = create<State>((set, get) => ({
         imageCount: p.images?.length
       })));
       
-      // Log all images with their properties for debugging
-      for (const plan of plans) {
-        if (plan.images && plan.images.length > 0) {
-          console.log(`Plan ${plan.name} has ${plan.images.length} images:`);
-          plan.images.forEach((img: Image, idx: number) => {
-            const safeKeys = ['key', 'url', 'comment', 'pointIndex', 'projectId', 'planId'];
-            const imageProps = safeKeys.map(key => `${key}=${(img as any)[key] || 'undefined'}`).join(', ');
-            console.log(`  Image ${idx} properties: ${imageProps}`);
-          });
-        }
-        
-        // Log all points with their properties
-        if (plan.points && plan.points.length > 0) {
-          console.log(`Plan ${plan.name} has ${plan.points.length} points:`);
-          plan.points.forEach((point: Point, idx: number) => {
-            const safeKeys = ['id', 'x', 'y', 'comment'];
-            const pointProps = safeKeys.map(key => `${key}=${point[key as keyof Point]}`).join(', ');
-            console.log(`  Point ${idx} properties: ${pointProps}`);
-          });
-        }
-      }
-      
-      // For each plan, properly prepare points with their images
-      for (const plan of plans) {
-        // Make sure we have the full points array
-        plan.points = plan.points || [];
-        plan.images = plan.images || [];
-        
-        console.log(`Plan ${plan.name}: Finding images for ${plan.points.length} points from ${plan.images.length} total images`);
-        
-        // Make sure each point has an images array
-        for (const point of plan.points) {
-          // Initialize images array if not present
-          point.images = point.images || [];
-          
-          // Try multiple ways to match images to points
-          const foundImages = plan.images.filter((img: Image) => {
-            // Check various possible relationships based on key and url
-            const matchByKey = img.key && point.id && img.key.includes(point.id);
-            const matchByUrl = img.url && point.id && img.url.includes(point.id);
-            
-            return matchByKey || matchByUrl;
-          });
-          
-          // Add found images to the point
-          if (foundImages.length > 0) {
-            point.images = foundImages;
-            console.log(`  Point ${point.id} now has ${foundImages.length} images attached`);
-          } else {
-            console.log(`  No images found for point ${point.id}`);
-            
-            // As a fallback, try to get all images that might be related by directory path
-            const possibleRelatedImages = point.id ? 
-              plan.images.filter((img: Image) => 
-                img.url && 
-                (img.url.includes(`point_${point.id}`) || img.url.includes(`/${point.id}/`))
-              ) : [];
-            
-            if (possibleRelatedImages.length > 0) {
-              point.images = possibleRelatedImages;
-              console.log(`  Fallback: Found ${possibleRelatedImages.length} images by URL pattern for point ${point.id}`);
-            }
-          }
-        }
-      }
-      
-      return await generateProjectReport(project, plans);
+      // Generate the report HTML
+      const reportHtml = await generateReportHTML({
+        projectName: project.name,
+        plans: plans.map((plan: Plan) => ({
+          name: plan.name || 'Unnamed Plan',
+          points: plan.points.map((point: Point) => ({
+            id: point.id,
+            x: point.x,
+            y: point.y,
+            comment: point.comment || '',
+            images: point.images.map((img: Image) => ({
+              data: img.url,
+              comment: img.comment
+            }))
+          }))
+        })),
+        generatedDate: new Date().toLocaleString()
+      });
+
+      return reportHtml;
     } catch (error) {
-      console.error('Failed to generate report:', error);
+      console.error('Error generating report:', error);
       throw error;
     }
   }

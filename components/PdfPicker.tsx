@@ -253,7 +253,7 @@ const PdfPicker = () => {
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="New Project Name"
-            className="p-2 border rounded mr-2"
+            className="p-2 border rounded mr-2 text-black"
             aria-label="New Project Name"
           />
           <button
@@ -334,7 +334,7 @@ const PdfPicker = () => {
                   type="text"
                   value={editingName}
                   onChange={(e) => setEditingName(e.target.value)}
-                  className="p-1 border rounded"
+                  className="p-1 border rounded text-black"
                   placeholder="Enter new name"
                   autoFocus
                 />
