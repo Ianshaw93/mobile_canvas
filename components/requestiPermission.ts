@@ -1,6 +1,7 @@
 import { Camera } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
 
 // Android permission constants
 const ANDROID_PERMISSIONS = {
@@ -11,6 +12,54 @@ const ANDROID_PERMISSIONS = {
   READ_MEDIA_VIDEO: 'android.permission.READ_MEDIA_VIDEO',
   READ_MEDIA_AUDIO: 'android.permission.READ_MEDIA_AUDIO',
   MANAGE_EXTERNAL_STORAGE: 'android.permission.MANAGE_EXTERNAL_STORAGE'
+};
+
+export type PermissionStatus = {
+  camera: boolean;
+  storage: boolean;
+  network: boolean;
+  isChecking: boolean;
+  error: string | null;
+};
+
+export type PermissionCallback = (status: PermissionStatus) => void;
+
+let permissionCallbacks: PermissionCallback[] = [];
+let currentStatus: PermissionStatus = {
+  camera: false,
+  storage: false,
+  network: false,
+  isChecking: false,
+  error: null
+};
+
+export const addPermissionCallback = (callback: PermissionCallback) => {
+  permissionCallbacks.push(callback);
+  // Immediately notify the new callback of current status
+  callback(currentStatus);
+};
+
+export const removePermissionCallback = (callback: PermissionCallback) => {
+  permissionCallbacks = permissionCallbacks.filter(cb => cb !== callback);
+};
+
+const notifyPermissionCallbacks = (status: PermissionStatus) => {
+  currentStatus = status;
+  permissionCallbacks.forEach(callback => callback(status));
+};
+
+export const checkNetworkStatus = async (): Promise<boolean> => {
+  const platform = Capacitor.getPlatform();
+  console.log('[Permissions] Checking network status on platform:', platform);
+  
+  try {
+    const status = await Network.getStatus();
+    console.log('[Permissions] Network status:', status);
+    return status.connected;
+  } catch (error) {
+    console.error('[Permissions] Error checking network status:', error);
+    return false;
+  }
 };
 
 export const checkCameraPermissions = async (): Promise<boolean> => {
@@ -131,11 +180,58 @@ export const requestFileSystemPermissions = async (): Promise<boolean> => {
   }
 };
 
-export const requestAllPermissions = async (): Promise<{ camera: boolean; filesystem: boolean }> => {
+export const checkAllPermissions = async (): Promise<PermissionStatus> => {
+  if (typeof window === 'undefined') return currentStatus;
+
+  try {
+    notifyPermissionCallbacks({
+      ...currentStatus,
+      isChecking: true,
+      error: null
+    });
+
+    // Check camera permission
+    const cameraPermission = await Camera.checkPermissions();
+    const hasCameraPermission = cameraPermission.camera === 'granted';
+
+    // Check storage permission
+    const hasStoragePermission = await checkFileSystemPermissions();
+
+    // Check network status
+    const hasNetwork = await checkNetworkStatus();
+
+    const newStatus: PermissionStatus = {
+      camera: hasCameraPermission,
+      storage: hasStoragePermission,
+      network: hasNetwork,
+      isChecking: false,
+      error: null
+    };
+
+    notifyPermissionCallbacks(newStatus);
+    return newStatus;
+  } catch (error: any) {
+    const errorStatus: PermissionStatus = {
+      ...currentStatus,
+      isChecking: false,
+      error: `Failed to check permissions: ${error?.message || 'Unknown error'}`
+    };
+    notifyPermissionCallbacks(errorStatus);
+    return errorStatus;
+  }
+};
+
+export const requestAllPermissions = async (): Promise<PermissionStatus> => {
   const platform = Capacitor.getPlatform();
   console.log('[Permissions] Starting permission requests on platform:', platform);
   
   try {
+    notifyPermissionCallbacks({
+      ...currentStatus,
+      isChecking: true,
+      error: null
+    });
+
     // Request camera permissions first
     console.log('[Permissions] Requesting camera permissions...');
     const camera = await requestCameraPermissions();
@@ -143,14 +239,39 @@ export const requestAllPermissions = async (): Promise<{ camera: boolean; filesy
     
     // Then check filesystem permissions
     console.log('[Permissions] Checking filesystem permissions...');
-    const filesystem = await checkFileSystemPermissions();
-    console.log('[Permissions] Filesystem permission result:', filesystem);
+    const storage = await checkFileSystemPermissions();
+    console.log('[Permissions] Filesystem permission result:', storage);
+
+    // Check network status
+    const network = await checkNetworkStatus();
+    console.log('[Permissions] Network status:', network);
     
-    console.log('[Permissions] All permissions requested:', { camera, filesystem });
-    return { camera, filesystem };
-  } catch (error) {
-    console.error('[Permissions] Error requesting all permissions:', error);
-    // Return true for filesystem to allow the app to continue
-    return { camera: false, filesystem: true };
+    const newStatus: PermissionStatus = {
+      camera,
+      storage,
+      network,
+      isChecking: false,
+      error: null
+    };
+
+    notifyPermissionCallbacks(newStatus);
+    return newStatus;
+  } catch (error: any) {
+    const errorStatus: PermissionStatus = {
+      ...currentStatus,
+      isChecking: false,
+      error: `Failed to request permissions: ${error?.message || 'Unknown error'}`
+    };
+    notifyPermissionCallbacks(errorStatus);
+    return errorStatus;
   }
 };
+
+// Initialize network status listener
+Network.addListener('networkStatusChange', async (status) => {
+  const newStatus: PermissionStatus = {
+    ...currentStatus,
+    network: status.connected
+  };
+  notifyPermissionCallbacks(newStatus);
+});

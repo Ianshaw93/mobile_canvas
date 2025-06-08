@@ -173,10 +173,10 @@ class Database {
     this.sqlite = new SQLiteConnection(CapacitorSQLite);
   }
 
-  async initialize() {
+  async initialize(): Promise<SQLiteDBConnection> {
     if (this.isInitialized) {
       console.log('[Database] Already initialized, skipping...');
-      return;
+      return this.db!;
     }
 
     try {
@@ -184,13 +184,14 @@ class Database {
       const platform = Capacitor.getPlatform();
       const isDev = process.env.NODE_ENV === 'development';
       
-      console.log('[Database] Platform:', platform, 'Development mode:', isDev);
+      console.log('[Database] Platform:', platform);
+      console.log('[Database] Development mode:', isDev);
 
       if (platform === 'web' || isDev) {
         console.log('[Database] Using dev storage');
         await devStorage.initialize();
         this.isInitialized = true;
-        return;
+        return this.db!;
       }
 
       // For native platforms, use SQLite
@@ -221,17 +222,66 @@ class Database {
         console.log('[Database] Tables created/verified successfully');
         
         this.isInitialized = true;
+        return this.db;
       } catch (error) {
         console.error('[Database] SQLite initialization error:', error);
         // Fallback to dev storage if SQLite fails
         console.log('[Database] Falling back to dev storage');
         await devStorage.initialize();
         this.isInitialized = true;
+        return this.db!;
       }
     } catch (error) {
       console.error('[Database] Initialization error:', error);
       throw error;
     }
+  }
+
+  private async createTables(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS plans (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+      )
+    `);
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS points (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (plan_id) REFERENCES plans (id) ON DELETE CASCADE
+      )
+    `);
+
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS images (
+        id TEXT PRIMARY KEY,
+        point_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (point_id) REFERENCES points (id) ON DELETE CASCADE
+      )
+    `);
   }
 
   // Project operations
@@ -275,7 +325,6 @@ class Database {
     return dbProjects.map(dbProjectToStore);
   }
 
-  // Plan operations
   async getPlansByProject(projectId: string, page: number = 1, pageSize: number = 20): Promise<Plan[]> {
     if (process.env.NODE_ENV === 'development') {
       const dbPlans = await devStorage.getPlansByProject(projectId, page, pageSize);
@@ -292,7 +341,6 @@ class Database {
     return dbPlans.map(dbPlanToStore);
   }
 
-  // Point operations
   async getPointsByPlan(planId: string, page: number = 1, pageSize: number = 20): Promise<Point[]> {
     if (process.env.NODE_ENV === 'development') {
       const dbPoints = await devStorage.getPointsByPlan(planId, page, pageSize);
@@ -309,7 +357,6 @@ class Database {
     return dbPoints.map(dbPointToStore);
   }
 
-  // Image operations
   async getImagesByPoint(pointId: string, page: number = 1, pageSize: number = 20): Promise<Image[]> {
     if (process.env.NODE_ENV === 'development') {
       const dbImages = await devStorage.getImagesByPoint(pointId, page, pageSize);
@@ -326,7 +373,6 @@ class Database {
     return dbImages.map(dbImageToStore);
   }
 
-  // Cleanup operations
   async deleteProject(id: string): Promise<void> {
     if (process.env.NODE_ENV === 'development') {
       return devStorage.deleteProject(id);
@@ -334,51 +380,6 @@ class Database {
 
     if (!this.db) throw new Error('Database not initialized');
     await this.db.run('DELETE FROM projects WHERE id = ?', [id]);
-  }
-
-  private async createTables(): Promise<void> {
-    await this.db.execute(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-
-    await this.db.execute(`
-      CREATE TABLE IF NOT EXISTS plans (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
-      )
-    `);
-
-    await this.db.execute(`
-      CREATE TABLE IF NOT EXISTS points (
-        id TEXT PRIMARY KEY,
-        plan_id TEXT NOT NULL,
-        x REAL NOT NULL,
-        y REAL NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (plan_id) REFERENCES plans (id) ON DELETE CASCADE
-      )
-    `);
-
-    await this.db.execute(`
-      CREATE TABLE IF NOT EXISTS images (
-        id TEXT PRIMARY KEY,
-        point_id TEXT NOT NULL,
-        path TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (point_id) REFERENCES points (id) ON DELETE CASCADE
-      )
-    `);
   }
 }
 

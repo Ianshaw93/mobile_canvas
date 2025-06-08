@@ -1,13 +1,20 @@
 import { create } from 'zustand';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
+import { Network } from '@capacitor/network';
 // import { Network } from '@capacitor/network'; // Import Network Plugin
 // import { sendData } from '@/components/ApiCalls';
 import { 
   checkCameraPermissions, 
   requestCameraPermissions, 
   requestFileSystemPermissions, 
-  requestAllPermissions 
+  requestAllPermissions,
+  checkFileSystemPermissions,
+  checkAllPermissions,
+  addPermissionCallback,
+  removePermissionCallback,
+  type PermissionStatus
 } from '@/components/requestiPermission';
 import { generateReportHTML, ReportTemplateData } from '@/utils/reportGenerator';
 import { generateProjectReport } from '@/services/ReportService';
@@ -64,12 +71,6 @@ type FileQueueItem = {
   projectId: string;
 };
 
-// Add new type for permission status
-type PermissionStatus = {
-  camera: boolean;
-  storage: boolean;
-};
-
 // Add new Project type
 export interface Project {
   id: string;
@@ -94,6 +95,7 @@ interface SiteState {
   selectedProjectId: string | null;
   offlineQueue: FileQueueItem[];
   permissionStatus: PermissionStatus;
+  addToast?: (message: string, type: 'success' | 'error') => void;
   initialize: () => Promise<void>;
   createProject: (project: DBProject) => Promise<void>;
   loadProjects: () => Promise<void>;
@@ -115,6 +117,9 @@ interface SiteState {
   addCommentToImage: (planId: string, pointId: string, imageId: string, comment: string) => Promise<void>;
   addToOfflineQueue: (item: FileQueueItem) => void;
   updateProjectImages: (projectId: string, images: Image[]) => Promise<void>;
+  checkPermissions: () => Promise<void>;
+  requestCameraPermission: () => Promise<boolean>;
+  requestStoragePermission: () => Promise<boolean>;
 }
 
 const useSiteStore = create<SiteState>((set, get) => ({
@@ -131,12 +136,28 @@ const useSiteStore = create<SiteState>((set, get) => ({
   pdfLoaded: false,
   selectedProjectId: null,
   offlineQueue: [],
-  permissionStatus: { camera: false, storage: false },
+  permissionStatus: { 
+    camera: false, 
+    storage: false, 
+    network: false,
+    isChecking: false,
+    error: null 
+  },
 
   initialize: async () => {
     try {
       console.log('[Store] Starting initialization...');
       set({ isLoading: true, error: null });
+
+      // Set up permission callback
+      const permissionCallback = (status: PermissionStatus) => {
+        set({ permissionStatus: status });
+      };
+      addPermissionCallback(permissionCallback);
+
+      // Initial permission check
+      await checkAllPermissions();
+
       // TODO: Initialize database when method is available
       console.log('[Store] Database initialized successfully');
       console.log('[Store] Loading projects...');
@@ -338,6 +359,148 @@ const useSiteStore = create<SiteState>((set, get) => ({
     } catch (error) {
       console.error('Error updating project images:', error);
       throw error;
+    }
+  },
+
+  checkPermissions: async () => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      set(state => ({
+        permissionStatus: { ...state.permissionStatus, isChecking: true, error: null }
+      }));
+
+      // Check camera permission
+      const cameraPermission = await Camera.checkPermissions();
+      const hasCameraPermission = cameraPermission.camera === 'granted';
+
+      // Check storage permission
+      const hasStoragePermission = await checkFileSystemPermissions();
+
+      // Check network status
+      const networkStatus = await Network.getStatus();
+      const hasNetwork = networkStatus.connected;
+
+      const prevPermissions = get().permissionStatus;
+
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          camera: hasCameraPermission,
+          storage: hasStoragePermission,
+          network: hasNetwork,
+          isChecking: false
+        }
+      }));
+
+      // Show toast for permission changes
+      if (prevPermissions.camera !== hasCameraPermission) {
+        get().addToast?.(
+          hasCameraPermission ? 'Camera permission granted' : 'Camera permission denied',
+          hasCameraPermission ? 'success' : 'error'
+        );
+      }
+
+      if (prevPermissions.storage !== hasStoragePermission) {
+        get().addToast?.(
+          hasStoragePermission ? 'Storage permission granted' : 'Storage permission denied',
+          hasStoragePermission ? 'success' : 'error'
+        );
+      }
+
+      if (prevPermissions.network !== hasNetwork) {
+        get().addToast?.(
+          hasNetwork ? 'Network connected' : 'Network disconnected',
+          hasNetwork ? 'success' : 'error'
+        );
+      }
+    } catch (error: any) {
+      console.error('Error checking permissions:', error);
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          isChecking: false,
+          error: `Failed to check permissions: ${error?.message || 'Unknown error'}`
+        }
+      }));
+      get().addToast?.('Failed to check permissions', 'error');
+    }
+  },
+
+  requestCameraPermission: async () => {
+    if (typeof window === 'undefined') return false;
+
+    try {
+      set(state => ({
+        permissionStatus: { ...state.permissionStatus, isChecking: true, error: null }
+      }));
+
+      const permission = await Camera.requestPermissions();
+      const hasPermission = permission.camera === 'granted';
+
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          camera: hasPermission,
+          isChecking: false
+        }
+      }));
+
+      get().addToast?.(
+        hasPermission ? 'Camera permission granted' : 'Camera permission denied',
+        hasPermission ? 'success' : 'error'
+      );
+
+      return hasPermission;
+    } catch (error: any) {
+      console.error('Error requesting camera permission:', error);
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          isChecking: false,
+          error: `Failed to request camera permission: ${error?.message || 'Unknown error'}`
+        }
+      }));
+      get().addToast?.('Failed to request camera permission', 'error');
+      return false;
+    }
+  },
+
+  requestStoragePermission: async () => {
+    if (typeof window === 'undefined') return false;
+
+    try {
+      set(state => ({
+        permissionStatus: { ...state.permissionStatus, isChecking: true, error: null }
+      }));
+
+      const hasPermission = await requestFileSystemPermissions();
+
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          storage: hasPermission,
+          isChecking: false
+        }
+      }));
+
+      get().addToast?.(
+        hasPermission ? 'Storage permission granted' : 'Storage permission denied',
+        hasPermission ? 'success' : 'error'
+      );
+
+      return hasPermission;
+    } catch (error: any) {
+      console.error('Error requesting storage permission:', error);
+      set(state => ({
+        permissionStatus: {
+          ...state.permissionStatus,
+          isChecking: false,
+          error: `Failed to request storage permission: ${error?.message || 'Unknown error'}`
+        }
+      }));
+      get().addToast?.('Failed to request storage permission', 'error');
+      return false;
     }
   }
 }));
