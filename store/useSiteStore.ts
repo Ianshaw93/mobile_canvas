@@ -113,6 +113,7 @@ interface SiteState {
   setCanvasDimensions: (dimensions: Dimensions) => void;
   setPdfLoaded: (loaded: boolean) => void;
   setSelectedProjectId: (id: string | null) => void;
+  setSelectedPoint: (point: Point | null) => void;
   getPlan: (id: string) => Plan | undefined;
   addPoint: (planId: string, point: Point) => Promise<void>;
   deletePoint: (planId: string, pointId: string) => Promise<void>;
@@ -365,16 +366,51 @@ const useSiteStore = create<SiteState>((set, get) => ({
     set({ selectedProjectId: id });
   },
 
+  setSelectedPoint: (point: Point | null) => {
+    set({ selectedPoint: point });
+  },
+
   getPlan: (id: string) => {
-    const { plans } = get();
-    return plans.find(plan => plan.id === id);
+    const state = get();
+    const plan = state.plans.find(p => p.id === id);
+    if (!plan) return undefined;
+
+    // Get points for this plan from the global points array
+    const planPoints = state.points.filter(p => p.planId === id);
+
+    return {
+      ...plan,
+      points: planPoints
+    };
   },
 
   // Pin operations
   addPoint: async (planId: string, point: Point) => {
-    set(state => ({
-      points: [...state.points, point]
-    }));
+    console.log('[Store] Adding point:', { planId, point });
+    set(state => {
+      // Update the global points array
+      const newPoints = [...state.points, point];
+
+      // Update the points in the plan
+      const updatedProjects = state.projects.map(project => ({
+        ...project,
+        plans: project.plans.map(plan =>
+          plan.id === planId
+            ? { ...plan, points: [...plan.points, point] }
+            : plan
+        )
+      }));
+
+      console.log('[Store] Updated state:', {
+        pointsCount: newPoints.length,
+        projects: updatedProjects
+      });
+
+      return {
+        points: newPoints,
+        projects: updatedProjects
+      };
+    });
   },
 
   deletePoint: async (planId: string, pointId: string) => {
@@ -392,14 +428,63 @@ const useSiteStore = create<SiteState>((set, get) => ({
   },
 
   addImageToPin: async (planId: string, pointId: string, image: Image) => {
-    set(state => ({
-      images: [...state.images, image],
-      points: state.points.map(p =>
-        p.id === pointId
-          ? { ...p, images: [...p.images, image] }
-          : p
-      )
-    }));
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Save to database
+        await database.createImage({
+          id: image.id,
+          point_id: pointId,
+          url: image.url,
+          comment: image.comment || '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      // Update state
+      set(state => {
+        // Update points array
+        const updatedPoints = state.points.map(point => {
+          if (point.id === pointId) {
+            return {
+              ...point,
+              images: [...point.images, image]
+            };
+          }
+          return point;
+        });
+
+        // Update projects array
+        const updatedProjects = state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan => {
+            if (plan.id === planId) {
+              return {
+                ...plan,
+                points: plan.points.map(point => {
+                  if (point.id === pointId) {
+                    return {
+                      ...point,
+                      images: [...point.images, image]
+                    };
+                  }
+                  return point;
+                })
+              };
+            }
+            return plan;
+          })
+        }));
+
+        return {
+          points: updatedPoints,
+          projects: updatedProjects
+        };
+      });
+    } catch (error) {
+      console.error('Error adding image to pin:', error);
+      throw error;
+    }
   },
 
   deleteImageFromPin: async (planId: string, pointId: string, imageId: string) => {
@@ -422,21 +507,39 @@ const useSiteStore = create<SiteState>((set, get) => ({
   },
 
   addCommentToImage: async (planId: string, pointId: string, imageId: string, comment: string) => {
-    set(state => ({
-      images: state.images.map(img =>
-        img.id === imageId ? { ...img, comment } : img
-      ),
-      points: state.points.map(p =>
-        p.id === pointId
-          ? {
-              ...p,
-              images: p.images.map(img =>
-                img.id === imageId ? { ...img, comment } : img
-              )
-            }
-          : p
-      )
-    }));
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Save to database
+        await database.updateImage({
+          id: imageId,
+          point_id: pointId,
+          url: '', // This will be updated by the existing image
+          comment: comment,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      // Update state
+      set(state => ({
+        images: state.images.map(img =>
+          img.id === imageId ? { ...img, comment } : img
+        ),
+        points: state.points.map(p =>
+          p.id === pointId
+            ? {
+                ...p,
+                images: p.images.map(img =>
+                  img.id === imageId ? { ...img, comment } : img
+                )
+              }
+            : p
+        )
+      }));
+    } catch (error) {
+      console.error('Error adding comment to image:', error);
+      throw error;
+    }
   },
 
   addToOfflineQueue: (item: FileQueueItem) => {
@@ -658,39 +761,32 @@ const useSiteStore = create<SiteState>((set, get) => ({
   },
 
   addPlan: async (projectId: string, plan: Plan) => {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const dbPlan: DBPlan = {
-          id: plan.id,
-          project_id: projectId,
-          name: plan.name,
-          url: plan.url,
-          thumbnail: plan.thumbnail,
-          width: plan.dimensions.width,
-          height: plan.dimensions.height,
-          display_scale: plan.dimensions.displayScale,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        await database.createPlan(dbPlan);
-      }
+    console.log('[Store] Adding plan:', { projectId, plan });
+    set(state => {
+      // Update the global plans array
+      const newPlans = [...state.plans, plan];
 
-      // Update both the plans array and the project's plans
-      set((state) => ({
-        plans: [...state.plans, plan],
-        projects: state.projects.map((p) =>
-          p.id === projectId
-            ? { ...p, plans: [...p.plans, plan] }
-            : p
-        )
-      }));
+      // Update the plans in the project
+      const updatedProjects = state.projects.map(project => {
+        if (project.id === projectId) {
+          return {
+            ...project,
+            plans: [...project.plans, plan]
+          };
+        }
+        return project;
+      });
 
-      get().addToast?.('Plan added successfully', 'success');
-    } catch (error) {
-      console.error('Error adding plan:', error);
-      get().addToast?.('Failed to add plan', 'error');
-      throw error;
-    }
+      console.log('[Store] Updated state:', {
+        plansCount: newPlans.length,
+        projects: updatedProjects
+      });
+
+      return {
+        plans: newPlans,
+        projects: updatedProjects
+      };
+    });
   },
 
   addCanvasRef: (planId: string, canvas: HTMLCanvasElement | null, pdfData: string) => {

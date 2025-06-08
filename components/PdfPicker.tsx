@@ -47,7 +47,7 @@ const PdfPicker = () => {
   const [previewImage, setPreviewImage] = useState<boolean>(false);
   const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
   const addPlan = useSiteStore((state) => state.addPlan);
-  const addCanvasRef = useSiteStore((state) => state.addCanvasRef); // Add canvas ref to Zustand
+  const addCanvasRef = useSiteStore((state) => state.addCanvasRef);
   const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
   const selectedProject = useSiteStore((state) => 
     state.projects.find(p => p.id === state.selectedProjectId)
@@ -56,7 +56,7 @@ const PdfPicker = () => {
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
   const router = useRouter();
   const pdfjs = usePDF();
-  const [mounted, setMounted] = useState(false); // Track if the component is mounted
+  const [mounted, setMounted] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const addProject = useSiteStore((state) => state.addProject);
   const setSelectedProjectId = useSiteStore((state) => state.setSelectedProjectId);
@@ -64,11 +64,10 @@ const PdfPicker = () => {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const updatePlanName = useSiteStore((state) => state.updatePlanName);
-  const [showRenameConfirm, setShowRenameConfirm] = useState<string | null>(null); // stores planId of plan being renamed
-  console.log("plans: ", plans)
+  const [showRenameConfirm, setShowRenameConfirm] = useState<string | null>(null);
 
   useEffect(() => {
-    setMounted(true); // Set to true once component is mounted
+    setMounted(true);
   }, []);
 
   // Add useEffect to handle automatic project selection
@@ -95,9 +94,9 @@ const PdfPicker = () => {
   }, [selectedProjectId]);
 
   if (!mounted) {
-    // Render nothing on the server and until the client mounts
     return null;
   }
+
   // Handle file upload and rendering to canvas
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
@@ -118,78 +117,78 @@ const PdfPicker = () => {
       const defaultName = `Building 1 Floor ${newIndex + 1}`;
 
       console.log("projectId: ", projectId, "planId: ", planId, file.name);
-      addToOfflineQueue(file, projectId, planId);
-      
-      // Load the PDF to get its original dimensions
-      // @ts-ignore
-      const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
-      loadingTask.promise.then((pdf: any) => {
-        const pageNumber = 1;
-        pdf.getPage(pageNumber).then((page: any) => {
-          // Get the original viewport at scale 1.0
-          const originalViewport = page.getViewport({ scale: 1.0 });
-          
-          const canvas = pdfCanvasRef.current;
-          const context = canvas?.getContext('2d');
-          const displayScale = 1.5; // Scale for display thumbnail
-          const viewport = page.getViewport({ scale: displayScale });
-
-          if (canvas) {
-            // Set canvas dimensions for thumbnail
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            setCanvasDimensions({ width: canvas.width, height: canvas.height });
-
-            // Render PDF page into canvas for thumbnail
-            const renderContext = {
-              canvasContext: context,
-              viewport,
-            };
-            const renderTask = page.render(renderContext);
-            renderTask.promise.then(() => {
-              const thumbnail = canvas.toDataURL();
-
-              const newPlan = {
-                id: planId,
-                name: defaultName,
-                url: base64PDF, // Original PDF data
-                thumbnail, // Separate thumbnail for display
-                dimensions: {
-                  width: originalViewport.width,   // Store original PDF dimensions
-                  height: originalViewport.height,
-                  displayScale: displayScale       // Store the display scale
-                },
-                points: [],
-                images: [],
-                planId: planId,
-                projectId: projectId
-              };
-              addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
-              addPlan(projectId, newPlan);
-              setPreviewImage(true);
-              
-              setEditingPlanId(planId);
-              setEditingName(defaultName);
-            });
-          }
-        });
+      addToOfflineQueue({
+        file,
+        projectId,
+        planId
       });
+      
+      try {
+        // Load the PDF to get its original dimensions
+        // @ts-ignore
+        const loadingTask = pdfjs.getDocument(URL.createObjectURL(file));
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        
+        // Get the original viewport at scale 1.0
+        const originalViewport = page.getViewport({ scale: 1.0 });
+        
+        const canvas = pdfCanvasRef.current;
+        const context = canvas?.getContext('2d');
+        const displayScale = 1.5; // Scale for display thumbnail
+        const viewport = page.getViewport({ scale: displayScale });
+
+        if (canvas) {
+          // Set canvas dimensions for thumbnail
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          setCanvasDimensions({ width: canvas.width, height: canvas.height });
+
+          // Render PDF page into canvas for thumbnail
+          const renderContext = {
+            canvasContext: context,
+            viewport,
+          };
+          const renderTask = page.render(renderContext);
+          await renderTask.promise;
+          const thumbnail = canvas.toDataURL();
+
+          const newPlan = {
+            id: planId,
+            name: defaultName,
+            url: base64PDF, // Original PDF data
+            thumbnail, // Separate thumbnail for display
+            dimensions: {
+              width: originalViewport.width,   // Store original PDF dimensions
+              height: originalViewport.height,
+              displayScale: displayScale       // Store the display scale
+            },
+            points: [],
+            images: [],
+            planId: planId,
+            projectId: projectId
+          };
+          addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
+          await addPlan(projectId, newPlan);
+          setPreviewImage(true);
+          
+          setEditingPlanId(planId);
+          setEditingName(defaultName);
+        }
+      } catch (error) {
+        console.error('Error processing PDF:', error);
+      }
     }
   };
 
-  // function handleDownloadClick() {
-  //   console.log("Downloading project button press")
-  //   downloadProject()
-  // }
   // Navigate to the PDF view
   const viewPdf = (planUrl: string, planId: string) => {
     console.log("planId: ", planId) 
     router.push({
       pathname: '/pdf-view',
       query: { 
-        // dataUrl: planUrl, 
         pdfId: planId
-      },  // Passing Base64 URL here
+      },
     });
   };
 
@@ -198,34 +197,6 @@ const PdfPicker = () => {
       updatePlanName(selectedProjectId, planId, editingName.trim());
       setEditingPlanId(null);
       setEditingName('');
-    }
-  };
-
-  // Function to send the current project to the backend
-  const handleSendProjectToBackend = async () => {
-    if (!selectedProjectId) {
-      console.log("No project selected");
-      return;
-    }
-
-    const projectToSend = projects.find(p => p.id === selectedProjectId);
-    if (!projectToSend) {
-      console.log("Selected project not found");
-      return;
-    }
-
-    // Log the project data as formatted JSON
-    console.log("Sending project to backend:");
-    console.log(JSON.stringify(projectToSend, null, 2));
-    
-    try {
-      const result = await sendProjectToBackend(projectToSend);
-      console.log("Project sent successfully:");
-      console.log(JSON.stringify(result, null, 2));
-      // You could add a success notification here
-    } catch (error) {
-      console.error("Failed to send project:", error);
-      // You could add an error notification here
     }
   };
 
@@ -259,11 +230,11 @@ const PdfPicker = () => {
           <button
             onClick={async () => {
               if (newProjectName.trim()) {
-                const projectId = `proj_${Date.now()}`;  // Match the ID format from useSiteStore
+                const projectId = `proj_${Date.now()}`;
                 addProject(newProjectName);
                 setNewProjectName('');
                 await useSiteStore.getState().loadPlans();
-                setSelectedProjectId(projectId);  // Auto-select the new project
+                setSelectedProjectId(projectId);
               }
             }}
             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:ring-2 focus:ring-blue-300"
@@ -300,28 +271,10 @@ const PdfPicker = () => {
               aria-label="Upload PDF"
             />
           </label>
-          {/* <button 
-            onClick={handleDownloadClick}
-            className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-0.1 mr-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" 
-            type="button"
-          >
-            Download Project
-          </button> */}
         </div>
       ) : (
         <p className="text-gray-500">Please select or create a project first</p>
       )}
-
-      {/* <button onClick={() => loginToDropbox()}>
-        Log in to Dropbox testing
-      </button> */}
-      {/* <button onClick={() => getAccessToken()}>
-        
-      </button> */}
-      {/* <BackupButton />
-      <canvas ref={pdfCanvasRef} 
-      className="hidden" 
-      /> */}
 
       <canvas ref={pdfCanvasRef} className="hidden" />
 
@@ -334,7 +287,7 @@ const PdfPicker = () => {
                   type="text"
                   value={editingName}
                   onChange={(e) => setEditingName(e.target.value)}
-                  className="p-1 border rounded text-black"
+                  className="p-2 border rounded text-black"
                   placeholder="Enter new name"
                   autoFocus
                 />
@@ -366,7 +319,6 @@ const PdfPicker = () => {
               </div>
             )}
             <img
-              // @ts-ignore
               src={plan.thumbnail}
               alt={plan.name}
               onClick={() => viewPdf(plan.url, plan.id)}
@@ -399,29 +351,10 @@ const PdfPicker = () => {
                 }}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
-                Yes, Rename
+                Rename
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Add this button near the bottom of the component, before the closing tag */}
-      {selectedProjectId && (
-        <div className="mt-4">
-          <button
-            onClick={handleSendProjectToBackend}
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 focus:ring-2 focus:ring-green-300"
-          >
-            Send Project to Backend
-          </button>
-        </div>
-      )}
-
-      {selectedProjectId && (
-        <div className="mt-4 space-x-4">
-          <ReportButton projectId={selectedProjectId} />
-          <DownloadProjectButton projectId={selectedProjectId} />
         </div>
       )}
     </>
