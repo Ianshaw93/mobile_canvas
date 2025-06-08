@@ -74,13 +74,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
   // Trigger the rendering when dependencies are ready
   useEffect(() => {
-    if (pdfjs && pdfCanvasRef.current && plan) {
+    if (pdfjs && pdfCanvasRef.current && plan && !imageDataUrl) {
       renderPdf();
     }
-  }, [pdfjs, pdfCanvasRef, plan]);
+  }, [pdfjs, pdfCanvasRef.current, plan?.url]); // Only re-render if the PDF URL changes
 
   return (
-    <div id="pdf-container" style={{ height: '100%' }}>
+    <div id="pdf-container" style={{
+      width: plan?.dimensions?.width,
+      height: plan?.dimensions?.height,
+      position: 'relative',
+      margin: '0 auto'
+    }}>
       {/* {imageDataUrl && (
         <img
           src={imageDataUrl}
@@ -90,7 +95,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
       )} */}
       <canvas
         ref={pdfCanvasRef}
-        // style={{ display: 'none' }} // Hide the canvas, since we're rendering the image
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          zIndex: 1
+        }}
       />
     </div>
   );
