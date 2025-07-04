@@ -257,8 +257,30 @@ class Database {
   async updatePoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'UPDATE points SET x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [point.x, point.y, point.comment || null, point.updated_at, point.id]
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [point.plan_id, point.x, point.y, point.comment || null, point.updated_at, point.id]
+    );
+  }
+
+  async updatePointPartial(id: string, updates: Partial<Omit<DBPoint, 'id'>>): Promise<void> {
+    const db = await this.getDBConnection();
+    
+    // Get current point to preserve existing values
+    const currentPoint = await this.getPoint(id);
+    if (!currentPoint) {
+      throw new Error(`Point with id ${id} not found`);
+    }
+
+    // Merge updates with current values
+    const updatedPoint = {
+      ...currentPoint,
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+
+    await db.run(
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.comment || null, updatedPoint.updated_at, id]
     );
   }
 

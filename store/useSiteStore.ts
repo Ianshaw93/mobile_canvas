@@ -316,56 +316,104 @@ const useSiteStore = create<SiteState>((set, get) => ({
   // Pin operations
   addPoint: async (planId: string, point: Point) => {
     console.log('[Store] Adding point:', { planId, point });
-    set(state => {
-      // Update the points in the plan using nested structure only
-      const updatedProjects = state.projects.map(project => ({
-        ...project,
-        plans: project.plans.map(plan =>
-          plan.id === planId
-            ? { ...plan, points: [...plan.points, point] }
-            : plan
-        )
-      }));
+    
+    try {
+      // ✅ Save to SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        await database.createPoint({
+          id: point.id,
+          plan_id: planId,
+          x: point.x,
+          y: point.y,
+          comment: point.comment,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        console.log('✅ Point saved to SQL database:', point.id);
+      }
 
-      console.log('[Store] Updated state:', {
-        projects: updatedProjects
+      // Then update Zustand store
+      set(state => {
+        const updatedProjects = state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? { ...plan, points: [...plan.points, point] }
+              : plan
+          )
+        }));
+
+        console.log('[Store] Point added to store and SQL:', { planId, point });
+        return { projects: updatedProjects };
       });
-
-      return {
-        projects: updatedProjects
-      };
-    });
+    } catch (error) {
+      console.error('❌ Error adding point:', error);
+      throw error;
+    }
   },
 
   deletePoint: async (planId: string, pointId: string) => {
-    set(state => ({
-      projects: state.projects.map(project => ({
-        ...project,
-        plans: project.plans.map(plan =>
-          plan.id === planId
-            ? { ...plan, points: plan.points.filter(p => p.id !== pointId) }
-            : plan
-        )
-      }))
-    }));
+    try {
+      // ✅ Delete from SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        await database.deletePoint(pointId);
+        console.log('✅ Point deleted from SQL database:', pointId);
+      }
+
+      // Then update Zustand store
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? { ...plan, points: plan.points.filter(p => p.id !== pointId) }
+              : plan
+          )
+        }))
+      }));
+    } catch (error) {
+      console.error('❌ Error deleting point:', error);
+      throw error;
+    }
   },
 
   changePointLocation: async (planId: string, pointId: string, x: number, y: number) => {
-    set(state => ({
-      projects: state.projects.map(project => ({
-        ...project,
-        plans: project.plans.map(plan =>
-          plan.id === planId
-            ? { 
-                ...plan, 
-                points: plan.points.map(p =>
-                  p.id === pointId ? { ...p, x, y } : p
-                )
-              }
-            : plan
-        )
-      }))
-    }));
+    try {
+      // ✅ Save to SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        // Get current point data to preserve other fields
+        const currentPoint = await database.getPoint(pointId);
+        if (currentPoint) {
+          await database.updatePoint({
+            ...currentPoint,
+            x: x,
+            y: y,
+            updated_at: new Date().toISOString()
+          });
+          console.log('✅ Point location updated in SQL database:', pointId);
+        }
+      }
+
+      // Then update Zustand store
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? { 
+                  ...plan, 
+                  points: plan.points.map(p =>
+                    p.id === pointId ? { ...p, x, y } : p
+                  )
+                }
+              : plan
+          )
+        }))
+      }));
+    } catch (error) {
+      console.error('❌ Error changing point location:', error);
+      throw error;
+    }
   },
 
   addImageToPin: async (planId: string, pointId: string, image: Image) => {
@@ -439,21 +487,41 @@ const useSiteStore = create<SiteState>((set, get) => ({
   },
 
   addCommentToPin: async (planId: string, pointId: string, comment: string) => {
-    set(state => ({
-      projects: state.projects.map(project => ({
-        ...project,
-        plans: project.plans.map(plan =>
-          plan.id === planId
-            ? {
-                ...plan,
-                points: plan.points.map(point =>
-                  point.id === pointId ? { ...point, comment } : point
-                )
-              }
-            : plan
-        )
-      }))
-    }));
+    try {
+      // ✅ Save to SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        // Get current point data to preserve other fields
+        const currentPoint = await database.getPoint(pointId);
+        if (currentPoint) {
+          await database.updatePoint({
+            ...currentPoint,
+            comment: comment,
+            updated_at: new Date().toISOString()
+          });
+          console.log('✅ Point comment saved to SQL database:', pointId);
+        }
+      }
+
+      // Then update Zustand store
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  points: plan.points.map(point =>
+                    point.id === pointId ? { ...point, comment } : point
+                  )
+                }
+              : plan
+          )
+        }))
+      }));
+    } catch (error) {
+      console.error('❌ Error adding comment to pin:', error);
+      throw error;
+    }
   },
 
   addCommentToImage: async (planId: string, pointId: string, imageKey: string, comment: string) => {
@@ -741,26 +809,43 @@ const useSiteStore = create<SiteState>((set, get) => ({
   addPlan: async (projectId: string, plan: Plan) => {
     console.log('[Store] Adding plan:', { projectId, plan });
     
-    // ✅ Use nested structure only (like reference branch)
-    set(state => {
-      const updatedProjects = state.projects.map(project => {
-        if (project.id === projectId) {
-          return {
-            ...project,
-            plans: [...project.plans, plan]
-          };
-        }
-        return project;
-      });
+    try {
+      // ✅ Save to SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        await database.createPlan({
+          id: plan.id,
+          project_id: projectId,
+          name: plan.name,
+          url: plan.url,
+          thumbnail: plan.thumbnail,
+          width: plan.dimensions.width,
+          height: plan.dimensions.height,
+          display_scale: plan.dimensions.displayScale,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        console.log('✅ Plan saved to SQL database:', plan.id);
+      }
 
-      console.log('[Store] Updated state:', {
-        projects: updatedProjects
-      });
+      // Then update Zustand store  
+      set(state => {
+        const updatedProjects = state.projects.map(project => {
+          if (project.id === projectId) {
+            return {
+              ...project,
+              plans: [...project.plans, plan]
+            };
+          }
+          return project;
+        });
 
-      return {
-        projects: updatedProjects
-      };
-    });
+        console.log('[Store] Plan added to store and SQL:', { projectId, plan: plan.id });
+        return { projects: updatedProjects };
+      });
+    } catch (error) {
+      console.error('❌ Error adding plan:', error);
+      throw error;
+    }
   },
 
   addCanvasRef: (planId: string, canvas: HTMLCanvasElement | null, pdfData: string) => {

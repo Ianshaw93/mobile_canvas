@@ -9,10 +9,13 @@ Fix data persistence and memory issues using SQL-on-demand pattern: load pin dat
 - ❌ Memory crashes with many images (loads ALL images with full base64 data)
 - ❌ Not scalable for production use
 
-**Current SQL Branch Issues**:
+**Current SQL Branch Issues (RESOLVED)**:
 - ✅ SQL database provides scalability
-- ❌ Incomplete data loading (projects loaded without plans/points/images)
-- ❌ Data disappears when popup reopens (stale state)
+- ✅ SQL-on-demand loading implemented (Task 1.1)
+- ✅ Plan persistence fixed - now saves to SQL database
+- ✅ Point persistence fixed - now saves to SQL database
+- ✅ Comment persistence fixed - now saves to SQL database
+- ✅ Foreign key constraints working correctly
 
 **SQL-on-Demand Solution**:
 - ✅ Solves memory issues (only active pin data in memory)
@@ -23,8 +26,18 @@ Fix data persistence and memory issues using SQL-on-demand pattern: load pin dat
 ## Completed Tasks
 
 - [x] Identified root cause of persistence issues
-- [x] Analyzed memory usage patterns
+- [x] Analyzed memory usage patterns  
 - [x] Designed SQL-on-demand architecture
+- [x] **CRITICAL FIX**: Fixed missing SQL persistence in point operations
+  - ✅ addPoint() now saves to SQL database
+  - ✅ addCommentToPin() now saves to SQL database
+  - ✅ deletePoint() now deletes from SQL database
+  - ✅ changePointLocation() now updates SQL database
+  - ✅ Enhanced database.updatePoint() to include plan_id
+  - ✅ Added database.updatePointPartial() for flexible updates
+- [x] **CRITICAL FIX**: Fixed missing SQL persistence in plan operations
+  - ✅ addPlan() now saves to SQL database (fixes foreign key constraint error)
+  - ✅ updatePlanName() already had SQL persistence
 
 ## Critical Tasks
 
