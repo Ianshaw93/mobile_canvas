@@ -233,7 +233,6 @@ const PdfPicker = () => {
                 const projectId = `proj_${Date.now()}`;
                 addProject(newProjectName);
                 setNewProjectName('');
-                await useSiteStore.getState().loadPlans();
                 setSelectedProjectId(projectId);
               }
             }}

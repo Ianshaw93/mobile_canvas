@@ -1,7 +1,7 @@
-import React, { useState, useLayoutEffect, useRef, useCallback, useEffect, useMemo } from 'react';
-import PinPopup from '@/components/PinPopup';
+import React, { useRef, useLayoutEffect, useCallback, useState, useMemo, useEffect } from 'react';
 import useSiteStore from '@/store/useSiteStore';
 import pinSvg from './pin_svg';
+import PinPopup from './PinPopup';
 
 // TODO: double click for pin drops
 // pin popup to show in middle of innerwindow, rather than centre of pdf/perhaps could be offset to pin location
@@ -16,6 +16,7 @@ type Point = {
   y: number;
   images: Image[];
   comment: string;
+  planId: string;
 };
 
 type Image = {
@@ -32,9 +33,7 @@ type Image = {
 
 // @ts-ignore
 function CanvasComponent({pdfId}) {
-  const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);  // For showing selected pin in popup
-  const [showPinPopup, setShowPinPopup] = useState(false);  // Controls the visibility of the popup
-  const dimensions = useSiteStore((state) => state.canvasDimensions);  // Get canvas dimensions from the store
+  const dimensions = useSiteStore((state) => state.canvasDimensions);
   const canvasRef = useRef(null);
 
   // Store states (for pins)
@@ -47,10 +46,9 @@ function CanvasComponent({pdfId}) {
     plans: selectedProject?.plans || [],
     currentPlan: selectedProject?.plans.find((plan) => plan.id === pdfId)
   }), [selectedProject, pdfId]);
-  const addPoint = useSiteStore((state) => state.addPoint);  // To add a new pin to the store
-  // const changePointLocation = useSiteStore((state) => state.changePointLocation);  // To change the location of a pin
+  const addPoint = useSiteStore((state) => state.addPoint);
   const points = useMemo(() => currentPlan?.points || [], [currentPlan]);
-  const pdfLoaded = useSiteStore((state) => state.pdfLoaded);  // Check if the PDF is loaded
+  const pdfLoaded = useSiteStore((state) => state.pdfLoaded);
   const [startHoldTime, setStartHoldTime] = useState<number|null>(null);
   const [pointerIsUp, setPointerIsUp] = useState<boolean>(true);
   const [pointerDownLocation, setPointerDownLocation] = useState<{x: number, y: number}>({x: 0, y: 0});
@@ -59,6 +57,23 @@ function CanvasComponent({pdfId}) {
   const [lastClickTime, setLastClickTime] = useState(0);
   const startPosRef = useRef({ x: 0, y: 0 });
   const isMovingRef = useRef(false);
+
+  // ✅ Reference branch pattern: Store only the ID, not the full object
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [showPinPopup, setShowPinPopup] = useState(false);
+
+  // ✅ Reference branch pattern: Derive fresh selectedPoint from store using ID
+  const selectedPoint = useMemo(() => {
+    if (!selectedPointId || !currentPlan) return null;
+    const freshPoint = currentPlan.points.find(point => point.id === selectedPointId);
+    console.log('🔄 Deriving fresh selectedPoint from store:', {
+      selectedPointId,
+      freshPoint,
+      images: freshPoint?.images,
+      comment: freshPoint?.comment
+    });
+    return freshPoint || null;
+  }, [selectedPointId, currentPlan]);
 
   useEffect(() => {
     const loadPinImage = () => {
@@ -140,20 +155,21 @@ function CanvasComponent({pdfId}) {
     },
     [points]
   );
-  // @ts-ignore
-  const handleCanvasClick = useCallback((event) => {
+
+
+
+  // ✅ Fixed handleCanvasClick to store ID and show popup (reference branch pattern)
+  const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     const now = Date.now();
     const timeSinceLastClick = now - lastClickTime;
     const doubleClickDelay = 500;
 
-    // If this was from a touch event and we detected movement, ignore it
     if (event.sourceCapabilities?.firesTouchEvents && isMovingRef.current) {
       return;
     }
 
-    const canvas = canvasRef.current;
+    const canvas = canvasRef.current as HTMLCanvasElement;
     if (!canvas || !currentPlan) return;
-    // @ts-ignore
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -163,22 +179,22 @@ function CanvasComponent({pdfId}) {
       // Double click detected - add new pin or select existing
       const closestPoint = findClosestPin(pointer);
       if (closestPoint) {
-        setSelectedPoint(closestPoint);
+        // ✅ Store only the ID and show popup (reference branch pattern)
+        console.log('🎯 Opening popup for pinId:', closestPoint.id);
+        setSelectedPointId(closestPoint.id);
         setShowPinPopup(true);
       } else {
+        // ✅ Create new pin and store its ID
         const pointId = Date.now().toString();
-        const newPoint = { id: pointId, x, y, images: [], comment: '' };
+        const newPoint = { id: pointId, x, y, images: [], comment: '', planId: currentPlan.id };
+        console.log('📍 Creating new pin with ID:', pointId);
         addPoint(currentPlan.id, newPoint);
         renderPoints();
-        // open popup
-        // set selected point to new point
-        setSelectedPoint(newPoint);
+        setSelectedPointId(pointId);
         setShowPinPopup(true);
       }
-      setLastClickTime(0); // Reset timer
-
+      setLastClickTime(0);
     } else {
-      // First click
       setLastClickTime(now);
     }
   }, [lastClickTime, currentPlan, findClosestPin, addPoint, renderPoints]);
@@ -226,11 +242,11 @@ function CanvasComponent({pdfId}) {
       setPointerDownLocation({x, y});
       // then move to pointer up location
       
-      setSelectedPoint(closestPoint);
+      setMovablePoint(closestPoint);
 
     } else {
       setStartHoldTime(null);
-      setSelectedPoint(null);
+      setMovablePoint(null);
       // // If no close pin is found, add a new pin
       // const pointId = Date.now().toString();
       // const newPoint = { id: pointId, x, y, images: [], comment: '' };
@@ -263,7 +279,7 @@ function CanvasComponent({pdfId}) {
           
           // see if pointer is same location as before
           // if so, highlight pin - set pin to selected/moving
-          setMovablePoint(selectedPoint);
+          setMovablePoint(movablePoint);
           // then move point to pointer up location
           // future - add point whilst moving
 
@@ -302,9 +318,6 @@ function CanvasComponent({pdfId}) {
     return Math.sqrt(a * a + b * b);
   };
 
-  // Find the closest pin to the pointer
-
-
   // UseLayoutEffect to render points when the component is mounted or points change
   // should be after pdf is loaded
   useLayoutEffect(() => {
@@ -320,9 +333,7 @@ function CanvasComponent({pdfId}) {
       <div style={{ position: 'relative', width: '100%', height: '100%', zIndex:100 }}>
         <canvas
           ref={canvasRef}
-          // @ts-ignore
           width={canvasDimensions.width}
-          // @ts-ignore
           height={canvasDimensions.height}
           className="border border-black rounded-md bg-transparent inset-0 absolute z-10"
           onClick={handleCanvasClick}
@@ -334,12 +345,12 @@ function CanvasComponent({pdfId}) {
           onPointerMove={handlePointerHeldDown}
         />
         
-        {/* Pin Popup for the selected pin - should show in middle of viewport/innerwindow*/}
+        {/* ✅ Popup with fresh selectedPoint (reference branch pattern) */}
         {showPinPopup && selectedPoint && (
           <PinPopup
             setShowPinPopup={setShowPinPopup}
-            selectedPoint={selectedPoint}  // Pass the selected pin to the popup
-            planId={currentPlan?.id || ''}  // Pass the current plan ID to the popup
+            selectedPoint={selectedPoint}  // Always fresh from store!
+            planId={currentPlan?.id || ''}
           />
         )}
       </div>

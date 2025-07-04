@@ -248,6 +248,12 @@ class Database {
     return result.values as DBPoint[] || [];
   }
 
+  async getPoint(id: string): Promise<DBPoint | undefined> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM points WHERE id = ?', [id]);
+    return result.values?.[0] as DBPoint | undefined;
+  }
+
   async updatePoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(

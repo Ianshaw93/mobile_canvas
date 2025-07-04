@@ -10,7 +10,6 @@ const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type ImageData = {
   data: string;
   key: string;
-  pointId: string;
   url: string;
   pointIndex: number;
   projectId: string;
@@ -165,6 +164,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
   
     const takePicture = async () => {
       try {
+        console.log('📸 Taking picture for selectedPoint:', selectedPoint.id);
+        
         const image = await Camera.getPhoto({
           quality: 80,
           allowEditing: false,
@@ -182,40 +183,38 @@ const CameraLogic= ({selectedPoint, planId}) => {
         const fileName = `${new Date().getTime()}.jpeg`;
         const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
 
-        // Optimize image before saving
         const optimizedBase64 = await optimizeImage(base64Data, {
           maxWidth: 1024,
           maxHeight: 1024,
           quality: 0.7
         });
 
-        // Save optimized image
         await saveImageToFilesystem(optimizedBase64.split(',')[1], fileName);
 
-        // Transform the Photo object into the Image type
-        const transformedImage: ImageData = {
+        const transformedImage = {
           key: fileName,
-          pointId: selectedPoint.id,
           url: optimizedBase64,
           pointIndex: pointIndex,
           projectId: projectId,
-          planId: planId,
-          data: optimizedBase64 // Add the data field
+          planId: planId
         };
 
-        // Update state with optimized image
-        setImageArray((prevImages) => [...prevImages, transformedImage]);
+        console.log('📸 Adding image to pin:', transformedImage);
+        
+        // Add to local image array with data field for UI display
+        setImageArray((prevImages) => [...prevImages, { ...transformedImage, data: optimizedBase64 }]);
         await saveImageToLocalStorage(image, projectId, planId);
 
-        // Add the image to the pin
-        // @ts-ignore
+        // Remove await (reference branch pattern)
+        console.log('📸 Calling addImageToPin with:', { planId, selectedPointId: selectedPoint.id, transformedImage });
         addImageToPin(planId, selectedPoint.id, transformedImage);
 
-        // Initialize empty comment
         setImageComments(prev => ({
           ...prev,
           [fileName]: ''
         }));
+        
+        console.log('📸 Image added successfully');
       } catch (error) {
         console.error('Error taking picture:', error);
         alert('Failed to take picture. Please try again.');
@@ -296,46 +295,90 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     useEffect(() => {
-      if (selectedPoint) {
-        loadFileData(selectedPoint.images);
-        setComment(selectedPoint.comment || '');
-        // Load image comments
+      console.log('🔍 CameraLogic useEffect triggered - selectedPoint:', selectedPoint);
+      console.log('🔍 CameraLogic switching to SQL-on-demand pattern');
+      
+      if (selectedPoint?.id) {
+        loadFreshPinDataFromSQL(selectedPoint.id);
+      }
+    }, [selectedPoint?.id]);
+
+    const loadFreshPinDataFromSQL = async (pointId: string) => {
+      try {
+        console.log('🔄 Loading fresh pin data via SQL-on-demand for pointId:', pointId);
+        
+        // Use store method to get fresh data from SQL + filesystem
+        const loadFreshPinData = useSiteStore.getState().loadFreshPinData;
+        const freshData = await loadFreshPinData(pointId);
+        
+        console.log('🔄 Fresh data loaded successfully:', freshData);
+        
+        // Update LOCAL component state with fresh data (don't update store)
+        setImageArray(freshData.imageArrayWithData);
+        setComment(freshData.point.comment || '');
+        
+        // Set image comments from fresh SQL data
         const comments: { [key: string]: string } = {};
-        // @ts-ignore
-        selectedPoint.images.forEach(img => {
+        freshData.images.forEach((img) => {
           if (img.comment) {
-            comments[img.key] = img.comment;
+            comments[img.id] = img.comment;
           }
         });
         setImageComments(comments);
+        
+        console.log('🔄 Local state updated with fresh SQL data');
+        
+      } catch (error) {
+        console.error('❌ Failed to load fresh pin data from SQL:', error);
+        // Fallback to existing selectedPoint data if SQL fails
+        if (selectedPoint?.images) {
+          console.log('🔄 Falling back to selectedPoint.images data');
+          loadFileData(selectedPoint.images);
+          setComment(selectedPoint.comment || '');
+          const comments: { [key: string]: string } = {};
+          selectedPoint.images.forEach((img: any) => {
+            if (img.comment) {
+              comments[img.key] = img.comment;
+            }
+          });
+          setImageComments(comments);
+        }
       }
-    }, [selectedPoint]);  
+    };  
 
     const handlePhotoTaken = async (photo: Photo) => {
       const base64Data = await convertPhotoToBase64(photo);
       // @ts-ignore
       const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
       
-      // Create a copy of the current imageArray
-      const updatedImageArray = [...imageArray];
-      
-      // Add the new image
-      updatedImageArray.push({
+      // Create the image object that matches the store's Image interface
+      const transformedImage = {
         key: fileName,
-        pointId: selectedPoint.id,
         url: base64Data,
         pointIndex: 0,
         // @ts-ignore
         projectId: selectedProjectId,
-        planId: planId,
+        planId: planId
+      };
+      
+      // Create a copy of the current imageArray
+      const updatedImageArray = [...imageArray];
+      
+      // Add the new image with data field for local UI rendering
+      updatedImageArray.push({
+        ...transformedImage,
         data: base64Data
       });
       
-      // Update state with the new array
+      // Update local state with the new array
       setImageArray(updatedImageArray);
       
       // Save to filesystem
       await saveImageToFilesystem(base64Data.split(',')[1], fileName);
+      
+      // **CRITICAL FIX: Add image to store to ensure persistence**
+      console.log('📸 Adding image to store via handlePhotoTaken:', { planId, selectedPointId: selectedPoint.id, transformedImage });
+      await addImageToPin(planId, selectedPoint.id, transformedImage);
       
       // Update state via Zustand
       // @ts-ignore
@@ -413,7 +456,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
         </button>
         <div>
           {imageArray.map((img, index) => {
-            const imageKey = selectedPoint?.images?.[index]?.key || `image-${index}`;
+            // ✅ Use local array data like reference branch
+            const imageKey = img.key || `image-${index}`;
             const src = img.data || img.url || ''; // Provide empty string as fallback
             return (
               <div key={imageKey} className="mb-6 p-4 border rounded-lg">
@@ -432,7 +476,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
                   value={imageComments[imageKey] || ''}
                   onChange={(e) => handleImageCommentChange(imageKey, e.target.value)}
                   onBlur={() => handleImageCommentBlur(imageKey)}
-                  className="mt-2 w-full p-2 border rounded"
+                  className="mt-2 w-full p-2 border rounded text-black"
                 />
               </div>
             );
@@ -444,7 +488,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
             value={comment}
             onChange={handleCommentChange}
             onBlur={handleCommentBlur}
-            className="mt-4 w-full p-2 border rounded"
+            className="mt-4 w-full p-2 border rounded text-black"
           />
         </div>
       </div>

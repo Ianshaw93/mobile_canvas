@@ -10,7 +10,19 @@ const PinDetailPage = () => {
   const getPlan = useSiteStore((state) => state.getPlan);
   const deletePoint = useSiteStore((state) => state.deletePoint);
   const plan = getPlan(pdfId);
+  
+  // ✅ This is the reference branch pattern - fresh data every render!
   const selectedPoint = plan?.points.find(point => point.id === pinId);
+
+  // ✅ Add console logs to verify fresh data pattern
+  useEffect(() => {
+    console.log('🔄 Pin detail page rendered - getting fresh data from store');
+    console.log('🔄 pdfId:', pdfId, 'pinId:', pinId);
+    console.log('🔄 plan:', plan);
+    console.log('🔄 selectedPoint (FRESH from store):', selectedPoint);
+    console.log('🔄 selectedPoint.images (FRESH):', selectedPoint?.images);
+    console.log('🔄 selectedPoint.comment (FRESH):', selectedPoint?.comment);
+  }, [pdfId, pinId, plan, selectedPoint]);
 
   const handleBack = () => {
     router.back();
@@ -67,6 +79,7 @@ const PinDetailPage = () => {
           {/* Images Section */}
           <div className="mb-6">
             <h2 className="text-lg font-medium mb-2">Images</h2>
+            {/* ✅ selectedPoint is always fresh from store - no stale data! */}
             <CameraLogic selectedPoint={selectedPoint} planId={pdfId} />
           </div>
         </div>

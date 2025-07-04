@@ -25,6 +25,13 @@ const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
     };
   }, []);
 
+  // ✅ Add effect to log the selectedPoint data when popup opens
+  useEffect(() => {
+    console.log('🔍 PinPopup opened with selectedPoint:', selectedPoint);
+    console.log('🔍 PinPopup selectedPoint.images:', selectedPoint?.images);
+    console.log('🔍 PinPopup selectedPoint.comment:', selectedPoint?.comment);
+  }, [selectedPoint]);
+
   const popupStyle = {
     position: 'absolute',
     top: '50%',

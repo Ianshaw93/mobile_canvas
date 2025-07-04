@@ -40,8 +40,7 @@ export interface Point {
 }
 
 export interface Image {
-  id: string;
-  pointId: string;
+  key: string;
   url: string;
   comment?: string;
   pointIndex: number;
@@ -87,9 +86,6 @@ export interface Project {
 
 interface SiteState {
   projects: Project[];
-  plans: Plan[];
-  points: Point[];
-  images: Image[];
   selectedProject: Project | null;
   selectedPlan: Plan | null;
   selectedPoint: Point | null;
@@ -106,9 +102,6 @@ interface SiteState {
   createProject: (project: DBProject) => Promise<void>;
   loadProjects: () => Promise<void>;
   loadProject: (id: string) => Promise<void>;
-  loadPlans: () => Promise<void>;
-  loadPoints: (planId: string) => Promise<void>;
-  loadImages: (pointId: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   setCanvasDimensions: (dimensions: Dimensions) => void;
   setPdfLoaded: (loaded: boolean) => void;
@@ -119,9 +112,9 @@ interface SiteState {
   deletePoint: (planId: string, pointId: string) => Promise<void>;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => Promise<void>;
   addImageToPin: (planId: string, pointId: string, image: Image) => Promise<void>;
-  deleteImageFromPin: (planId: string, pointId: string, imageId: string) => Promise<void>;
+  deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => Promise<void>;
   addCommentToPin: (planId: string, pointId: string, comment: string) => Promise<void>;
-  addCommentToImage: (planId: string, pointId: string, imageId: string, comment: string) => Promise<void>;
+  addCommentToImage: (planId: string, pointId: string, imageKey: string, comment: string) => Promise<void>;
   addToOfflineQueue: (item: FileQueueItem) => void;
   updateProjectImages: (projectId: string, images: Image[]) => Promise<void>;
   checkPermissions: () => Promise<void>;
@@ -133,6 +126,19 @@ interface SiteState {
   addCanvasRef: (planId: string, canvas: HTMLCanvasElement | null, pdfData: string) => void;
   addImage: (pointId: string, image: { url: string; comment?: string }) => Promise<void>;
   processImage: (img: { url: string; comment?: string }) => Promise<void>;
+  loadFreshPinData: (pointId: string) => Promise<{
+    point: DBPoint;
+    images: DBImage[];
+    imageArrayWithData: Array<{
+      key: string;
+      url: string;
+      data: string;
+      comment?: string;
+      pointIndex: number;
+      projectId: string;
+      planId: string;
+    }>;
+  }>;
 }
 
 // Helper functions to convert between DB and UI types
@@ -142,12 +148,11 @@ const convertDBPointToPoint = (dbPoint: DBPoint, images: Image[] = []): Point =>
   x: dbPoint.x,
   y: dbPoint.y,
   comment: dbPoint.comment,
-  images: images.filter(img => img.pointId === dbPoint.id)
+  images: images // Images will be filtered at the query level
 });
 
 const convertDBImageToImage = (dbImage: DBImage, projectId: string, planId: string): Image => ({
-  id: dbImage.id,
-  pointId: dbImage.point_id,
+  key: dbImage.id,
   url: dbImage.url,
   comment: dbImage.comment,
   pointIndex: 0, // This will be set by the UI
@@ -165,9 +170,6 @@ const convertDBProjectToProject = (dbProject: DBProject, plans: Plan[] = []): Pr
 
 const useSiteStore = create<SiteState>((set, get) => ({
   projects: [],
-  plans: [] as Plan[],
-  points: [] as Point[],
-  images: [] as Image[],
   selectedProject: null,
   selectedPlan: null,
   selectedPoint: null,
@@ -269,75 +271,6 @@ const useSiteStore = create<SiteState>((set, get) => ({
     }
   },
 
-  // Plan operations
-  loadPlans: async () => {
-    try {
-      const projectId = get().selectedProjectId;
-      if (!projectId) {
-        set({ plans: [] });
-        return;
-      }
-
-      if (Capacitor.isNativePlatform()) {
-        const dbPlans = await database.getPlansByProject(projectId);
-        const plans = dbPlans.map(p => ({
-          id: p.id,
-          name: p.name,
-          url: p.url,
-          thumbnail: p.thumbnail,
-          dimensions: {
-            width: p.width,
-            height: p.height,
-            displayScale: p.display_scale
-          },
-          points: [],
-          images: [],
-          planId: p.id,
-          projectId: projectId
-        }));
-        set({ plans });
-      } else {
-        set({ plans: [] });
-      }
-    } catch (error) {
-      console.error('Error loading plans:', error);
-      throw error;
-    }
-  },
-
-  // Point operations
-  loadPoints: async (planId: string) => {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const dbPoints = await database.getPointsByPlan(planId);
-        const dbImages = await database.getImagesByPoint(planId);
-        const points = dbPoints.map(p => convertDBPointToPoint(p, dbImages.map(img => convertDBImageToImage(img, '', planId))));
-        set({ points });
-      } else {
-        set({ points: [] });
-      }
-    } catch (error) {
-      console.error('Error loading points:', error);
-      throw error;
-    }
-  },
-
-  // Image operations
-  loadImages: async (pointId: string) => {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const dbImages = await database.getImagesByPoint(pointId);
-        const images = dbImages.map(img => convertDBImageToImage(img, '', ''));
-        set({ images });
-      } else {
-        set({ images: [] });
-      }
-    } catch (error) {
-      console.error('Error loading images:', error);
-      throw error;
-    }
-  },
-
   // Cleanup operations
   deleteProject: async (id: string) => {
     try {
@@ -372,26 +305,19 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   getPlan: (id: string) => {
     const state = get();
-    const plan = state.plans.find(p => p.id === id);
-    if (!plan) return undefined;
-
-    // Get points for this plan from the global points array
-    const planPoints = state.points.filter(p => p.planId === id);
-
-    return {
-      ...plan,
-      points: planPoints
-    };
+    // Search through nested projects.plans structure like reference branch
+    for (const project of state.projects) {
+      const plan = project.plans.find(p => p.id === id);
+      if (plan) return plan;
+    }
+    return undefined;
   },
 
   // Pin operations
   addPoint: async (planId: string, point: Point) => {
     console.log('[Store] Adding point:', { planId, point });
     set(state => {
-      // Update the global points array
-      const newPoints = [...state.points, point];
-
-      // Update the points in the plan
+      // Update the points in the plan using nested structure only
       const updatedProjects = state.projects.map(project => ({
         ...project,
         plans: project.plans.map(plan =>
@@ -402,12 +328,10 @@ const useSiteStore = create<SiteState>((set, get) => ({
       }));
 
       console.log('[Store] Updated state:', {
-        pointsCount: newPoints.length,
         projects: updatedProjects
       });
 
       return {
-        points: newPoints,
         projects: updatedProjects
       };
     });
@@ -415,24 +339,42 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   deletePoint: async (planId: string, pointId: string) => {
     set(state => ({
-      points: state.points.filter(p => p.id !== pointId)
+      projects: state.projects.map(project => ({
+        ...project,
+        plans: project.plans.map(plan =>
+          plan.id === planId
+            ? { ...plan, points: plan.points.filter(p => p.id !== pointId) }
+            : plan
+        )
+      }))
     }));
   },
 
   changePointLocation: async (planId: string, pointId: string, x: number, y: number) => {
     set(state => ({
-      points: state.points.map(p =>
-        p.id === pointId ? { ...p, x, y } : p
-      )
+      projects: state.projects.map(project => ({
+        ...project,
+        plans: project.plans.map(plan =>
+          plan.id === planId
+            ? { 
+                ...plan, 
+                points: plan.points.map(p =>
+                  p.id === pointId ? { ...p, x, y } : p
+                )
+              }
+            : plan
+        )
+      }))
     }));
   },
 
   addImageToPin: async (planId: string, pointId: string, image: Image) => {
+    console.log('📍 Store addImageToPin called:', { planId, pointId, image });
+    
     try {
       if (Capacitor.isNativePlatform()) {
-        // Save to database
         await database.createImage({
-          id: image.id,
+          id: image.key,
           point_id: pointId,
           url: image.url,
           comment: image.comment || '',
@@ -441,43 +383,32 @@ const useSiteStore = create<SiteState>((set, get) => ({
         });
       }
 
-      // Update state
       set(state => {
-        // Update points array
-        const updatedPoints = state.points.map(point => {
-          if (point.id === pointId) {
-            return {
-              ...point,
-              images: [...point.images, image]
-            };
-          }
-          return point;
-        });
-
-        // Update projects array
         const updatedProjects = state.projects.map(project => ({
           ...project,
-          plans: project.plans.map(plan => {
-            if (plan.id === planId) {
-              return {
-                ...plan,
-                points: plan.points.map(point => {
-                  if (point.id === pointId) {
-                    return {
-                      ...point,
-                      images: [...point.images, image]
-                    };
-                  }
-                  return point;
-                })
-              };
-            }
-            return plan;
-          })
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  points: plan.points.map(point =>
+                    point.id === pointId
+                      ? { ...point, images: [...point.images, image] }
+                      : point
+                  )
+                }
+              : plan
+          )
         }));
 
+        console.log('📍 Store updated - new projects structure:', updatedProjects);
+        
+        // Find the updated point for debugging
+        const updatedProject = updatedProjects.find(p => p.plans.some(pl => pl.id === planId));
+        const updatedPlan = updatedProject?.plans.find(pl => pl.id === planId);
+        const updatedPoint = updatedPlan?.points.find(pt => pt.id === pointId);
+        console.log('📍 Updated point after adding image:', updatedPoint);
+
         return {
-          points: updatedPoints,
           projects: updatedProjects
         };
       });
@@ -487,31 +418,50 @@ const useSiteStore = create<SiteState>((set, get) => ({
     }
   },
 
-  deleteImageFromPin: async (planId: string, pointId: string, imageId: string) => {
+  deleteImageFromPin: async (planId: string, pointId: string, imageKey: string) => {
     set(state => ({
-      images: state.images.filter(i => i.id !== imageId),
-      points: state.points.map(p =>
-        p.id === pointId
-          ? { ...p, images: p.images.filter(img => img.id !== imageId) }
-          : p
-      )
+      projects: state.projects.map(project => ({
+        ...project,
+        plans: project.plans.map(plan =>
+          plan.id === planId
+            ? {
+                ...plan,
+                points: plan.points.map(point =>
+                  point.id === pointId
+                    ? { ...point, images: point.images.filter((img: Image) => img.key !== imageKey) }
+                    : point
+                )
+              }
+            : plan
+        )
+      }))
     }));
   },
 
   addCommentToPin: async (planId: string, pointId: string, comment: string) => {
     set(state => ({
-      points: state.points.map(p =>
-        p.id === pointId ? { ...p, comment } : p
-      )
+      projects: state.projects.map(project => ({
+        ...project,
+        plans: project.plans.map(plan =>
+          plan.id === planId
+            ? {
+                ...plan,
+                points: plan.points.map(point =>
+                  point.id === pointId ? { ...point, comment } : point
+                )
+              }
+            : plan
+        )
+      }))
     }));
   },
 
-  addCommentToImage: async (planId: string, pointId: string, imageId: string, comment: string) => {
+  addCommentToImage: async (planId: string, pointId: string, imageKey: string, comment: string) => {
     try {
       if (Capacitor.isNativePlatform()) {
         // Save to database
         await database.updateImage({
-          id: imageId,
+          id: imageKey,
           point_id: pointId,
           url: '', // This will be updated by the existing image
           comment: comment,
@@ -520,21 +470,28 @@ const useSiteStore = create<SiteState>((set, get) => ({
         });
       }
 
-      // Update state
+      // Update state using nested structure only
       set(state => ({
-        images: state.images.map(img =>
-          img.id === imageId ? { ...img, comment } : img
-        ),
-        points: state.points.map(p =>
-          p.id === pointId
-            ? {
-                ...p,
-                images: p.images.map(img =>
-                  img.id === imageId ? { ...img, comment } : img
-                )
-              }
-            : p
-        )
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  points: plan.points.map(point =>
+                    point.id === pointId
+                      ? {
+                          ...point,
+                          images: point.images.map((img: Image) =>
+                            img.key === imageKey ? { ...img, comment } : img
+                          )
+                        }
+                      : point
+                  )
+                }
+              : plan
+          )
+        }))
       }));
     } catch (error) {
       console.error('Error adding comment to image:', error);
@@ -550,10 +507,23 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   updateProjectImages: async (projectId: string, images: Image[]) => {
     try {
-      // TODO: Persist to database when method is available
+      // Update using nested structure only
       set(state => ({
-        images: state.images.map(i => 
-          i.projectId === projectId ? images.find(img => img.id === i.id) || i : i
+        projects: state.projects.map(project =>
+          project.id === projectId
+            ? {
+                ...project,
+                plans: project.plans.map(plan => ({
+                  ...plan,
+                  points: plan.points.map(point => ({
+                    ...point,
+                    images: point.images.map((img: Image) => 
+                      images.find((newImg: Image) => newImg.key === img.key) || img
+                    )
+                  }))
+                }))
+              }
+            : project
         )
       }));
     } catch (error) {
@@ -746,9 +716,17 @@ const useSiteStore = create<SiteState>((set, get) => ({
         await database.updatePlan(planId, { name: newName });
       }
 
+      // ✅ Use nested structure only (like reference branch)
       set((state) => ({
-        plans: state.plans.map((plan) =>
-          plan.id === planId ? { ...plan, name: newName } : plan
+        projects: state.projects.map(project =>
+          project.id === projectId
+            ? {
+                ...project,
+                plans: project.plans.map(plan =>
+                  plan.id === planId ? { ...plan, name: newName } : plan
+                )
+              }
+            : project
         )
       }));
 
@@ -762,11 +740,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addPlan: async (projectId: string, plan: Plan) => {
     console.log('[Store] Adding plan:', { projectId, plan });
+    
+    // ✅ Use nested structure only (like reference branch)
     set(state => {
-      // Update the global plans array
-      const newPlans = [...state.plans, plan];
-
-      // Update the plans in the project
       const updatedProjects = state.projects.map(project => {
         if (project.id === projectId) {
           return {
@@ -778,12 +754,10 @@ const useSiteStore = create<SiteState>((set, get) => ({
       });
 
       console.log('[Store] Updated state:', {
-        plansCount: newPlans.length,
         projects: updatedProjects
       });
 
       return {
-        plans: newPlans,
         projects: updatedProjects
       };
     });
@@ -810,8 +784,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
       }
 
       const newImage: Image = {
-        id: uuidv4(),
-        pointId,
+        key: uuidv4(),
         url: image.url,
         comment: image.comment,
         pointIndex: 0, // This should be calculated based on existing points
@@ -819,8 +792,19 @@ const useSiteStore = create<SiteState>((set, get) => ({
         planId: '' // This should be passed in or retrieved from context
       };
 
-      set((state) => ({
-        images: [...state.images, newImage]
+      // Add to nested structure only
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan => ({
+            ...plan,
+            points: plan.points.map(point =>
+              point.id === pointId
+                ? { ...point, images: [...point.images, newImage] }
+                : point
+            )
+          }))
+        }))
       }));
 
       get().addToast?.('Image added successfully', 'success');
@@ -848,6 +832,76 @@ const useSiteStore = create<SiteState>((set, get) => ({
       get().addToast?.('Failed to process image', 'error');
       throw error;
     }
+  },
+
+  loadFreshPinData: async (pointId: string) => {
+    try {
+      console.log('🔄 Loading fresh pin data from SQL for pointId:', pointId);
+      
+      if (!Capacitor.isNativePlatform()) {
+        throw new Error('SQL database only available in native mode');
+      }
+
+      // Load fresh point from SQL
+      const dbPoint = await database.getPoint(pointId);
+      if (!dbPoint) {
+        throw new Error(`Point with id ${pointId} not found`);
+      }
+
+      // Load fresh images from SQL
+      const dbImages = await database.getImagesByPoint(pointId);
+      console.log('🔄 Loaded images from SQL:', dbImages);
+
+      // Load base64 data for each image from filesystem
+      const imageArrayWithData = await Promise.all(
+        dbImages.map(async (dbImage, index) => {
+          try {
+            // Load image data from filesystem
+            const readFile = await Filesystem.readFile({
+              directory: Directory.Data,
+              path: dbImage.url // url contains the filename
+            });
+
+            return {
+              key: dbImage.id,
+              url: dbImage.url,
+              data: `data:image/jpeg;base64,${readFile.data}`,
+              comment: dbImage.comment,
+              pointIndex: index,
+              projectId: '', // Will be derived from context
+              planId: dbPoint.plan_id
+            };
+          } catch (error) {
+            console.error(`Error loading image file ${dbImage.url}:`, error);
+            // Return image metadata even if file loading fails
+            return {
+              key: dbImage.id,
+              url: dbImage.url,
+              data: '', // Empty data if file load fails
+              comment: dbImage.comment,
+              pointIndex: index,
+              projectId: '',
+              planId: dbPoint.plan_id
+            };
+          }
+        })
+      );
+
+      console.log('🔄 Fresh pin data loaded successfully:', {
+        point: dbPoint,
+        imageCount: dbImages.length,
+        imageArrayWithDataCount: imageArrayWithData.length
+      });
+
+      return {
+        point: dbPoint,
+        images: dbImages,
+        imageArrayWithData
+      };
+    } catch (error) {
+      console.error('Failed to load fresh pin data from SQL:', error);
+      throw error;
+    }
   }
 }));
 
@@ -868,9 +922,9 @@ const cleanupStorage = async (state: SiteState) => {
     const keepFiles = new Set(['projects.json']);
     projects.forEach((project: Project) => {
       project.plans.forEach((plan: Plan) => {
-        plan.images.forEach((img: Image) => keepFiles.add(img.id));
+        plan.images.forEach((img: Image) => keepFiles.add(img.key));
         plan.points.forEach((point: Point) => {
-          point.images.forEach((img: Image) => keepFiles.add(img.id));
+          point.images.forEach((img: Image) => keepFiles.add(img.key));
         });
       });
     });
@@ -905,13 +959,13 @@ const savePlansToFilesystem = async (projects: Project[], state: SiteState) => {
         ...plan,
         images: plan.images.map((img: Image) => ({
           ...img,
-          url: img.id
+          url: img.key
         })),
         points: plan.points.map((point: Point) => ({
           ...point,
           images: point.images.map((img: Image) => ({
             ...img,
-            url: img.id
+            url: img.key
           }))
         }))
       }))
