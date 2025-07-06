@@ -245,8 +245,11 @@ const PdfPicker = () => {
 
       {/* Add a visual cue when project is selected */}
       {selectedProjectId && (
-        <div className="mt-2 text-green-600 animate-pulse">
-          ↓ Add PDFs to your project here ↓
+        <div className="mt-2 mb-4">
+          <div className="text-green-600 animate-pulse mb-2">
+            ↓ Add PDFs to your project here ↓
+          </div>
+          <DownloadProjectButton projectId={selectedProjectId} />
         </div>
       )}
 

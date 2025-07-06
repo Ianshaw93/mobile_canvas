@@ -168,61 +168,65 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           normalizedY: normalizedY.toFixed(5),
           originalX: point.x.toFixed(2),
           originalY: point.y.toFixed(2),
-          pointComment: point.comment || ''
+          pointComment: point.comment || '' // This should be the same for all images from this point
+        };
+
+        // Debug: Log point comment to ensure it's being accessed correctly
+        console.log(`CSV Export - Point ${point.id} comment:`, point.comment);
+
+        // Escape CSV function for proper field handling
+        const escapeCsvField = (field: string | number) => {
+          const fieldStr = String(field);
+          if (fieldStr.includes(',') || fieldStr.includes('"') || fieldStr.includes('\n')) {
+            return `"${fieldStr.replace(/"/g, '""')}"`;
+          }
+          return fieldStr;
         };
 
         // If point has no images, create one row for the point
         if (!point.images || point.images.length === 0) {
           return [[
-            baseData.projectId,
-            baseData.projectName,
-            baseData.planId,
-            baseData.planName,
-            baseData.planFileName,
-            baseData.planWidth,
-            baseData.planHeight,
-            baseData.pointId,
-            baseData.normalizedX,
-            baseData.normalizedY,
-            baseData.originalX,
-            baseData.originalY,
-            baseData.pointComment,
-            '', // No image file
-            '', // No image comment
-            new Date().toISOString()
+            escapeCsvField(baseData.projectId),
+            escapeCsvField(baseData.projectName),
+            escapeCsvField(baseData.planId),
+            escapeCsvField(baseData.planName),
+            escapeCsvField(baseData.planFileName),
+            escapeCsvField(baseData.planWidth),
+            escapeCsvField(baseData.planHeight),
+            escapeCsvField(baseData.pointId),
+            escapeCsvField(baseData.normalizedX),
+            escapeCsvField(baseData.normalizedY),
+            escapeCsvField(baseData.originalX),
+            escapeCsvField(baseData.originalY),
+            escapeCsvField(baseData.pointComment), // Properly escaped point comment
+            escapeCsvField(''), // No image file
+            escapeCsvField(''), // No image comment
+            escapeCsvField(new Date().toISOString())
           ].join(',')];
         }
 
         // Create a row for each image in the point
         // @ts-ignore
         return point.images.map((image, index) => [
-          baseData.projectId,
-          baseData.projectName,
-          baseData.planId,
-          baseData.planName,
-          baseData.planFileName,
-          baseData.planWidth,
-          baseData.planHeight,
-          baseData.pointId,
-          baseData.normalizedX,
-          baseData.normalizedY,
-          baseData.originalX,
-          baseData.originalY,
-          baseData.pointComment,
-          `point_${point.id}_image_${index + 1}.jpg`,
-          image.comment || '',
-          new Date().toISOString()
+          escapeCsvField(baseData.projectId),
+          escapeCsvField(baseData.projectName),
+          escapeCsvField(baseData.planId),
+          escapeCsvField(baseData.planName),
+          escapeCsvField(baseData.planFileName),
+          escapeCsvField(baseData.planWidth),
+          escapeCsvField(baseData.planHeight),
+          escapeCsvField(baseData.pointId),
+          escapeCsvField(baseData.normalizedX),
+          escapeCsvField(baseData.normalizedY),
+          escapeCsvField(baseData.originalX),
+          escapeCsvField(baseData.originalY),
+          escapeCsvField(baseData.pointComment), // Same point comment for all images from this pin
+          escapeCsvField(`point_${point.id}_image_${index + 1}.jpg`),
+          escapeCsvField(image.comment || ''),
+          escapeCsvField(new Date().toISOString())
         ].join(','));
       });
     });
-
-    // Escape any commas in text fields and wrap in quotes if needed
-    const escapeCsvField = (field: string) => {
-      if (field.includes(',') || field.includes('"') || field.includes('\n')) {
-        return `"${field.replace(/"/g, '""')}"`;
-      }
-      return field;
-    };
 
     return [headers.join(','), ...rows].join('\n');
   };

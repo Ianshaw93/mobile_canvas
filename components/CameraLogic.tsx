@@ -254,9 +254,11 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     const handleCommentBlur = () => {
-      if (comment && comment !== selectedPoint.comment) {
-      // only update when focus is lost
-      addCommentToPin(planId, selectedPoint.id, comment);
+      if (comment && comment.trim() !== '') {
+        // Save comment if it has content (regardless of whether it changed)
+        // This ensures comments are saved even when selectedPoint.comment is undefined
+        console.log('💬 Saving point comment:', comment);
+        addCommentToPin(planId, selectedPoint.id, comment);
       }
     };
 
