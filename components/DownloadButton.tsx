@@ -3,7 +3,7 @@ import useSiteStore from '@/store/useSiteStore';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { sendData } from './ApiCalls';
+// import { sendData } from './ApiCalls';
 
 
 // Utility function to convert state to CSV
