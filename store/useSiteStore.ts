@@ -944,7 +944,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
             // Load image data from filesystem
             const readFile = await Filesystem.readFile({
               directory: Directory.Data,
-              path: dbImage.url // url contains the filename
+              path: dbImage.id // id contains the filename
             });
 
             return {

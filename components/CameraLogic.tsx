@@ -117,12 +117,11 @@ const CameraLogic= ({selectedPoint, planId}) => {
     });
     const saveImageToFilesystem = async (base64Data: string, fileName: string) => {
       try {
-        // Save with maximum quality
+        // Save with maximum quality - removed encoding to use default binary encoding for base64 data
         await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
-          directory: Directory.Data,
-          encoding: Encoding.UTF8 // Using UTF8 for base64 data
+          directory: Directory.Data
         });
       } catch (err) {
         console.error('Error saving file:', err);
