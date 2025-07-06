@@ -26,6 +26,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
   const plan = getPlan(pdfId); // Get the plan using pdfId
   const setCanvasDimensions = useSiteStore((state) => state.setCanvasDimensions);
   const setPdfLoaded = useSiteStore((state) => state.setPdfLoaded);
+  const canvasDimensions = useSiteStore((state) => state.canvasDimensions); // Single source of truth for dimensions
 
   // Render the PDF onto the canvas
   const renderPdf = async () => {
@@ -79,10 +80,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
     }
   }, [pdfjs, pdfCanvasRef.current, plan?.url]); // Only re-render if the PDF URL changes
 
+  // PDF Container Sizing Fix: Use canvasDimensions (actual rendered size) instead of plan.dimensions (original PDF size)
+  // This ensures container matches the rendered canvas exactly, preventing oversized containers
   return (
     <div id="pdf-container" style={{
-      width: plan?.dimensions?.width,
-      height: plan?.dimensions?.height,
+      width: canvasDimensions.width || 800,  // Use actual rendered dimensions (single source of truth)
+      height: canvasDimensions.height || 600, // Fallback values for loading state
       position: 'relative',
       margin: '0 auto'
     }}>
