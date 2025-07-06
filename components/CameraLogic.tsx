@@ -302,6 +302,18 @@ const CameraLogic= ({selectedPoint, planId}) => {
       }
     }, [selectedPoint?.id]);
 
+    // Task 1.2: Memory cleanup when popup closes
+    useEffect(() => {
+      return () => {
+        // Cleanup when component unmounts (popup closes)
+        console.log('🧹 CameraLogic cleanup - clearing local state to free memory');
+        setImageArray([]);
+        setComment('');
+        setImageComments({});
+        console.log('🧹 Memory cleanup completed - freed base64 image data');
+      };
+    }, []);
+
     const loadFreshPinDataFromSQL = async (pointId: string) => {
       try {
         console.log('🔄 Loading fresh pin data via SQL-on-demand for pointId:', pointId);
@@ -346,8 +358,13 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };  
 
     const handlePhotoTaken = async (photo: Photo) => {
+      // Guard against null selectedProjectId
+      if (!selectedProjectId) {
+        console.error('No project selected - cannot save image');
+        return;
+      }
+
       const base64Data = await convertPhotoToBase64(photo);
-      // @ts-ignore
       const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
       
       // Create the image object that matches the store's Image interface
@@ -355,7 +372,6 @@ const CameraLogic= ({selectedPoint, planId}) => {
         key: fileName,
         url: base64Data,
         pointIndex: 0,
-        // @ts-ignore
         projectId: selectedProjectId,
         planId: planId
       };
