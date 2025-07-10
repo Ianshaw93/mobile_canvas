@@ -3,6 +3,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { Camera } from '@capacitor/camera';
 import { Network } from '@capacitor/network';
+import { App } from '@capacitor/app';
 // import { Network } from '@capacitor/network'; // Import Network Plugin
 // import { sendData } from '@/components/ApiCalls';
 import { 
@@ -202,6 +203,26 @@ const useSiteStore = create<SiteState>((set, get) => ({
       // Initial permission check
       await checkAllPermissions();
 
+      // ✅ ADD APP LIFECYCLE LISTENERS
+      console.log('[Store] Setting up app lifecycle listeners...');
+      
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) {
+          console.log('🔄 App going inactive/terminating - data already saved to SQLite');
+          // Data is already being saved in real-time to SQLite, so nothing needed here
+        } else {
+          console.log('🔄 App becoming active - ready to load data from SQLite');
+        }
+      });
+
+      App.addListener('pause', () => {
+        console.log('⏸️ App paused - data safely in SQLite database');
+      });
+
+      App.addListener('resume', () => {
+        console.log('▶️ App resumed - data will load from SQLite as needed');
+      });
+
       // Initialize database
       if (Capacitor.isNativePlatform()) {
         console.log('[Store] Initializing database...');
@@ -243,7 +264,54 @@ const useSiteStore = create<SiteState>((set, get) => ({
       console.log('[Store] Loading all projects...');
       if (Capacitor.isNativePlatform()) {
         const dbProjects = await database.getAllProjects();
-        const projects = dbProjects.map(p => convertDBProjectToProject(p));
+        console.log('[Store] Loaded projects from DB:', dbProjects);
+        
+        // ✅ Load complete projects with plans and points
+        const projects = await Promise.all(
+          dbProjects.map(async (dbProject) => {
+            // Load plans for this project
+            const dbPlans = await database.getPlansByProject(dbProject.id);
+            console.log(`[Store] Loaded ${dbPlans.length} plans for project ${dbProject.id}`);
+            
+            // Load points for each plan
+            const plans = await Promise.all(
+              dbPlans.map(async (dbPlan) => {
+                const dbPoints = await database.getPointsByPlan(dbPlan.id);
+                console.log(`[Store] Loaded ${dbPoints.length} points for plan ${dbPlan.id}`);
+                
+                // Convert DB points to UI points (with images)
+                const points = await Promise.all(
+                  dbPoints.map(async (dbPoint) => {
+                    const dbImages = await database.getImagesByPoint(dbPoint.id);
+                    const images = dbImages.map(dbImg => convertDBImageToImage(dbImg, dbProject.id, dbPlan.id));
+                    return convertDBPointToPoint(dbPoint, images);
+                  })
+                );
+                
+                // Convert DB plan to UI plan
+                return {
+                  id: dbPlan.id,
+                  name: dbPlan.name,
+                  url: dbPlan.url,
+                  thumbnail: dbPlan.thumbnail,
+                  dimensions: {
+                    width: dbPlan.width,
+                    height: dbPlan.height,
+                    displayScale: dbPlan.display_scale
+                  },
+                  points: points,
+                  images: [], // Legacy field
+                  planId: dbPlan.id,
+                  projectId: dbProject.id
+                } as Plan;
+              })
+            );
+            
+            return convertDBProjectToProject(dbProject, plans);
+          })
+        );
+        
+        console.log('[Store] Loaded complete projects with plans and points:', projects);
         set({ projects });
       } else {
         set({ projects: [] });
