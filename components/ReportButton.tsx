@@ -11,6 +11,7 @@ const ReportButton = ({ projectId }: ReportButtonProps) => {
   const handleGenerateReport = async () => {
     setIsGenerating(true);
     try {
+      // @ts-ignore
       const uri = await useSiteStore.getState().generateReport(projectId);
       window.open(uri, '_blank');
     } catch (error) {

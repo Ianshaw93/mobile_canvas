@@ -18,34 +18,6 @@ const config: CapacitorConfig = {
   //   "cleartext": true
   // },
 
-  // plugins: {
-    // Permissions: {
-      // requestedPermissions: [
-      //   "android.permission.READ_EXTERNAL_STORAGE",
-      //   "android.permission.WRITE_EXTERNAL_STORAGE",
-      //   "android.permission.READ_MEDIA_IMAGES",
-      //   "android.permission.READ_MEDIA_VIDEO",
-      //   "android.permission.READ_MEDIA_AUDIO",
-      //   "android.permission.INTERNET",
-      //   "android.permission.CAMERA"
-      // ]
-    // },
-    // SQLite: {
-    //   iosDatabaseLocation: 'Library/SQLite',
-    //   iosIsEncryption: false,
-    //   iosBiometric: {
-    //     biometricAuth: false,
-    //     biometricTitle: "Biometric login for capacitor sqlite"
-    //   },
-    //   androidIsEncryption: false,
-    //   androidBiometric: {
-    //     biometricAuth: false,
-    //     biometricTitle: "Biometric login for capacitor sqlite",
-    //     biometricSubTitle: "Log in using your biometric"
-    //   },
-    //   androidDatabaseLocation: 'databases'
-    // }
-  // }
 };
 
 export default config;
