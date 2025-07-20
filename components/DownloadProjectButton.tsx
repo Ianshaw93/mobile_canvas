@@ -7,7 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { usePDF } from '@/hooks/usePDF';
 
 // @ts-ignore
-const generatePinPreviewImage = async (pdfjs, plan, point, size = 300, zoomLevel = 2) => {
+const generatePinPreviewImage = async (pdfjs, plan, point, pointIndex, size = 300, zoomLevel = 2) => {
   return new Promise(async (resolve, reject) => {
     try {
       // Create a canvas element
@@ -97,8 +97,6 @@ const generatePinPreviewImage = async (pdfjs, plan, point, size = 300, zoomLevel
       context.textAlign = 'center';
       // @ts-ignore
       context.textBaseline = 'middle';
-      // @ts-ignore
-      const pointIndex = plan.points.findIndex(p => p.id === point.id);
       // @ts-ignore
       context.fillText(
         (pointIndex + 1).toString(),
@@ -363,7 +361,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           // Generate pin preview
           try {
             console.log(`Generating preview for point ${point.id} in plan ${plan.id}`);
-            const previewJpg = await generatePinPreviewImage(pdfjs, plan, point);
+            const pointIndex = planData.points.findIndex(p => p.point.id === point.id);
+            const previewJpg = await generatePinPreviewImage(pdfjs, plan, point, pointIndex);
             const previewFileName = `plan_${plan.id}_point_${point.id}_preview.jpg`;
             previewsFolder?.file(previewFileName, previewJpg as string, { base64: true });
           } catch (error) {
