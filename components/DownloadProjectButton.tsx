@@ -119,6 +119,7 @@ const generatePinPreviewImage = async (pdfjs, plan, point, size = 300, zoomLevel
 
 const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState<string>('');
   const selectedProject = useSiteStore((state) => 
     state.projects.find(p => p.id === projectId)
   );
@@ -231,24 +232,124 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
     return [headers.join(','), ...rows].join('\n');
   };
 
+  // Helper function to generate CSV from export data
+  const generateCSVFromExportData = (exportData: any) => {
+    const headers = [
+      'Project ID', 'Project Name', 'Plan ID', 'Plan Name', 'Plan File Name',
+      'Plan Width', 'Plan Height', 'Point ID', 'Point X (Normalized)', 'Point Y (Normalized)',
+      'Point X (Original)', 'Point Y (Original)', 'Point Comment', 'Image File Name',
+      'Image Comment', 'Timestamp'
+    ];
+
+    const rows = exportData.plans.flatMap((planData: any) => {
+      const plan = planData.plan;
+      const planFileName = `plan_${plan.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+      const planWidth = plan.dimensions?.width || 0;
+      const planHeight = plan.dimensions?.height || 0;
+
+      return planData.points.flatMap((pointData: any) => {
+        const point = pointData.point;
+        const normalizedX = planWidth ? (point.x / planWidth) : 0;
+        const normalizedY = planHeight ? (point.y / planHeight) : 0;
+
+        const baseData = {
+          projectId: exportData.project.id,
+          projectName: exportData.project.name,
+          planId: plan.id,
+          planName: plan.name || '',
+          planFileName,
+          planWidth,
+          planHeight,
+          pointId: point.id,
+          normalizedX: normalizedX.toFixed(5),
+          normalizedY: normalizedY.toFixed(5),
+          originalX: point.x.toFixed(2),
+          originalY: point.y.toFixed(2),
+          pointComment: point.comment || ''
+        };
+
+        const escapeCsvField = (field: string | number) => {
+          const fieldStr = String(field);
+          if (fieldStr.includes(',') || fieldStr.includes('"') || fieldStr.includes('\n')) {
+            return `"${fieldStr.replace(/"/g, '""')}"`;
+          }
+          return fieldStr;
+        };
+
+        if (!pointData.images || pointData.images.length === 0) {
+          return [[
+            escapeCsvField(baseData.projectId),
+            escapeCsvField(baseData.projectName),
+            escapeCsvField(baseData.planId),
+            escapeCsvField(baseData.planName),
+            escapeCsvField(baseData.planFileName),
+            escapeCsvField(baseData.planWidth),
+            escapeCsvField(baseData.planHeight),
+            escapeCsvField(baseData.pointId),
+            escapeCsvField(baseData.normalizedX),
+            escapeCsvField(baseData.normalizedY),
+            escapeCsvField(baseData.originalX),
+            escapeCsvField(baseData.originalY),
+            escapeCsvField(baseData.pointComment),
+            escapeCsvField(''),
+            escapeCsvField(''),
+            escapeCsvField(new Date().toISOString())
+          ].join(',')];
+        }
+
+        return pointData.images.map((image: any, index: number) => [
+          escapeCsvField(baseData.projectId),
+          escapeCsvField(baseData.projectName),
+          escapeCsvField(baseData.planId),
+          escapeCsvField(baseData.planName),
+          escapeCsvField(baseData.planFileName),
+          escapeCsvField(baseData.planWidth),
+          escapeCsvField(baseData.planHeight),
+          escapeCsvField(baseData.pointId),
+          escapeCsvField(baseData.normalizedX),
+          escapeCsvField(baseData.normalizedY),
+          escapeCsvField(baseData.originalX),
+          escapeCsvField(baseData.originalY),
+          escapeCsvField(baseData.pointComment),
+          escapeCsvField(`point_${point.id}_image_${index + 1}.jpg`),
+          escapeCsvField(image.comment || ''),
+          escapeCsvField(new Date().toISOString())
+        ].join(','));
+      });
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+  };
+
   const handleDownload = async () => {
     if (!selectedProject || !pdfjs) return;
     setIsGenerating(true);
+    setProgress('Loading project data...');
 
     try {
+      console.log('📦 Starting project export for:', selectedProject.name);
+      
+      // Load complete export data with base64 image data
+      setProgress('Loading images...');
+      const loadExportData = useSiteStore.getState().loadExportData;
+      const exportData = await loadExportData(selectedProject.id);
+      
+      console.log('📦 Export data loaded, creating zip file...');
+      
       const zip = new JSZip();
       
       // Create folders in the zip
       const pdfsFolder = zip.folder("pdfs");
       const imagesFolder = zip.folder("images");
-      const previewsFolder = zip.folder("pin_previews"); // New folder for pin previews
+      const previewsFolder = zip.folder("pin_previews");
       
-      // Add project data as CSV
-      const csvData = generateCSV(selectedProject.plans);
+      // Generate CSV with the loaded data
+      const csvData = generateCSVFromExportData(exportData);
       zip.file("project_data.csv", csvData);
 
       // Add PDFs
-      for (const plan of selectedProject.plans) {
+      for (const planData of exportData.plans) {
+        const plan = planData.plan;
         if (plan.url) {
           const pdfData = plan.url.split(',')[1]; // Remove data URL prefix
           const fileName = `${plan.name || plan.id}.pdf`;
@@ -256,31 +357,35 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         }
 
         // Process each point
-        for (const point of plan.points) {
+        for (const pointData of planData.points) {
+          const point = pointData.point;
+          
           // Generate pin preview
           try {
             console.log(`Generating preview for point ${point.id} in plan ${plan.id}`);
             const previewJpg = await generatePinPreviewImage(pdfjs, plan, point);
             const previewFileName = `plan_${plan.id}_point_${point.id}_preview.jpg`;
-            // @ts-ignore
-            previewsFolder?.file(previewFileName, previewJpg, { base64: true });
+            previewsFolder?.file(previewFileName, previewJpg as string, { base64: true });
           } catch (error) {
             console.error(`Error generating preview for point ${point.id}:`, error);
           }
 
           // Add images for each point
-          for (let i = 0; i < point.images.length; i++) {
-            const image = point.images[i];
-            if (image.url) {
-              const imageData = image.url.split(',')[1]; // Remove data URL prefix
+          for (let i = 0; i < pointData.images.length; i++) {
+            const image = pointData.images[i];
+            if (image.data) { // Use the loaded base64 data
               const fileName = `point_${point.id}_image_${i + 1}.jpg`;
-              imagesFolder?.file(fileName, imageData, { base64: true });
+              imagesFolder?.file(fileName, image.data, { base64: true });
+              console.log(`✅ Added image ${fileName} to zip`);
+            } else {
+              console.warn(`⚠️ Skipping image ${image.key} - no data available`);
             }
           }
         }
       }
 
-      // Generate zip file
+      setProgress('Generating previews...');
+      console.log('📦 Generating zip file...');
       const zipContent = await zip.generateAsync({ type: "blob" });
 
       if (Capacitor.isNativePlatform()) {
@@ -331,11 +436,16 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }
+      
+      setProgress('Export complete!');
+      console.log('📦 Project export completed successfully');
     } catch (error) {
       console.error('Error generating zip:', error);
-      alert('Failed to generate project export');
+      setProgress('Export failed');
+      alert('Failed to generate project export. Please try again.');
     } finally {
       setIsGenerating(false);
+      setProgress('');
     }
   };
 
@@ -345,7 +455,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       disabled={isGenerating}
       className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-400"
     >
-      {isGenerating ? 'Generating Export...' : 'Export Project'}
+      {isGenerating ? `Exporting... ${progress}` : 'Export Project'}
     </button>
   );
 };
