@@ -7,7 +7,8 @@ export function usePDF() {
   useEffect(() => {
     // @ts-ignore
     import('pdfjs-dist/build/pdf').then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      // Use the local worker file from public/
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
       setPdf(pdfjs);
     });
   }, []);
