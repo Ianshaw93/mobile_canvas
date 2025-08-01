@@ -194,7 +194,7 @@ class Database {
 
   async getPlansByProject(projectId: string): Promise<DBPlan[]> {
     const db = await this.getDBConnection();
-    const result = await db.query('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+    const result = await db.query('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at ASC', [projectId]);
     return result.values as DBPlan[] || [];
   }
 
@@ -244,7 +244,7 @@ class Database {
 
   async getPointsByPlan(planId: string): Promise<DBPoint[]> {
     const db = await this.getDBConnection();
-    const result = await db.query('SELECT * FROM points WHERE plan_id = ? ORDER BY created_at DESC', [planId]);
+    const result = await db.query('SELECT * FROM points WHERE plan_id = ? ORDER BY created_at ASC', [planId]);
     return result.values as DBPoint[] || [];
   }
 
@@ -300,7 +300,7 @@ class Database {
 
   async getImagesByPoint(pointId: string): Promise<DBImage[]> {
     const db = await this.getDBConnection();
-    const result = await db.query('SELECT * FROM images WHERE point_id = ? ORDER BY created_at DESC', [pointId]);
+    const result = await db.query('SELECT * FROM images WHERE point_id = ? ORDER BY created_at ASC', [pointId]);
     return result.values as DBImage[] || [];
   }
 
