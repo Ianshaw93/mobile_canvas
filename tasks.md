@@ -155,3 +155,59 @@ The app now has a complete SQL-on-demand architecture that solves both memory cr
 **Original Timeline**: 1-2 days ✅ ACHIEVED
 **Remaining Timeline**: 1-2 hours (3 essential polish tasks)
 **Priority**: ✅ CRITICAL MISSION COMPLETE - remaining tasks are production polish
+
+---
+
+# Plan Management Features
+
+## New High-Level Tasks
+
+### **Task 4.1**: Allow Users to Reorder Plans
+**Priority**: High  
+**Estimated Time**: 2-3 hours  
+
+**Goal**: Users can change the order of plans in the PDF picker page and this order is maintained across app restarts and exports.
+
+**User Story**: As a user, I want to reorder my plans so they appear in my preferred sequence, and I want this order to be preserved when I export reports.
+
+**Acceptance Criteria**:
+- Plans can be reordered by the user
+- Reordering interface is hidden by default to prevent accidental changes
+- Order persists after app restart
+- Export reports maintain the user's custom order
+
+### **Task 4.2**: Allow Users to Delete Plans  
+**Priority**: High  
+**Estimated Time**: 1-2 hours  
+
+**Goal**: Users can safely delete plans they no longer need, with appropriate warnings about data loss.
+
+**User Story**: As a user, I want to delete plans I no longer need, but I want clear warnings about what will be lost and confirmation steps to prevent accidents.
+
+**Acceptance Criteria**:
+- Users can delete plans with clear warning about associated data loss
+- Deletion requires confirmation to prevent accidents  
+- All associated pins, images, and files are properly cleaned up
+- User receives feedback about success/failure
+
+### **Task 4.3**: Improve Pin List Visual Identification
+**Priority**: Medium  
+**Estimated Time**: 1-2 hours  
+
+**Goal**: Users can easily identify and locate pins in the pin list through accurate positioning and image previews.
+
+**User Story**: As a user viewing the pin list, I want to see exactly where each pin is located on the plan and preview the images associated with each pin so I can quickly find the pin I'm looking for.
+
+**Acceptance Criteria**:
+- Pin location markers show accurate position on plan thumbnails
+- Pin list displays small image previews for each pin that has images
+- Users can visually distinguish between different pins
+- Pin positioning is consistent with actual pin locations on the full PDF view
+
+**Benefits**:
+✅ **User Control**: Users can organize plans in desired order  
+✅ **Export Order**: Reports maintain user's custom plan sequence  
+✅ **Safety**: Hidden by default to prevent accidental changes  
+✅ **Data Cleanup**: Proper deletion removes all associated data  
+✅ **Mobile Friendly**: Arrow buttons work well on touch screens  
+✅ **Pin Identification**: Users can quickly locate and identify specific pins
