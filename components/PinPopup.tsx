@@ -40,8 +40,8 @@ const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
     maxHeight: `${viewportDimensions.height * 0.8}px`,
     maxWidth: `${viewportDimensions.width * 0.9}px`,
     // width: '100%',
-    // overflowY: 'auto',
-    zIndex: 1000,
+    overflowY: 'auto',
+    // zIndex: 1000,
   };
 
   return (

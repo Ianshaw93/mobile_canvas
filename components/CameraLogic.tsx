@@ -493,7 +493,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
                   value={imageComments[imageKey] || ''}
                   onChange={(e) => handleImageCommentChange(imageKey, e.target.value)}
                   onBlur={() => handleImageCommentBlur(imageKey)}
-                  className="mt-2 w-full p-2 border rounded text-black"
+                  className="mt-2 w-full p-2 border rounded text-black h-20 resize-y"
+                  rows={3}
                 />
               </div>
             );
@@ -505,7 +506,8 @@ const CameraLogic= ({selectedPoint, planId}) => {
             value={comment}
             onChange={handleCommentChange}
             onBlur={handleCommentBlur}
-            className="mt-4 w-full p-2 border rounded text-black"
+            className="mt-4 w-full p-2 border rounded text-black h-24 resize-y"
+            rows={4}
           />
         </div>
       </div>
