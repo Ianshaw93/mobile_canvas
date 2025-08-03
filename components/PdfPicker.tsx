@@ -64,7 +64,12 @@ const PdfPicker = () => {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const updatePlanName = useSiteStore((state) => state.updatePlanName);
+  const movePlanUp = useSiteStore((state) => state.movePlanUp);
+  const movePlanDown = useSiteStore((state) => state.movePlanDown);
+  const deletePlan = useSiteStore((state) => state.deletePlan);
   const [showRenameConfirm, setShowRenameConfirm] = useState<string | null>(null);
+  const [managementMode, setManagementMode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -200,6 +205,45 @@ const PdfPicker = () => {
     }
   };
 
+  const handleMovePlanUp = async (planId: string) => {
+    if (selectedProjectId) {
+      try {
+        await movePlanUp(selectedProjectId, planId);
+      } catch (error) {
+        console.error('Error moving plan up:', error);
+      }
+    }
+  };
+
+  const handleMovePlanDown = async (planId: string) => {
+    if (selectedProjectId) {
+      try {
+        await movePlanDown(selectedProjectId, planId);
+      } catch (error) {
+        console.error('Error moving plan down:', error);
+      }
+    }
+  };
+
+  const handleDeletePlan = async (planId: string) => {
+    if (selectedProjectId) {
+      try {
+        await deletePlan(selectedProjectId, planId);
+        setShowDeleteConfirm(null);
+        setManagementMode(false);
+      } catch (error) {
+        console.error('Error deleting plan:', error);
+      }
+    }
+  };
+
+  const toggleManagementMode = () => {
+    setManagementMode(!managementMode);
+    // Exit editing mode when toggling management
+    setEditingPlanId(null);
+    setEditingName('');
+  };
+
   return (
     <>
       {/* Project Selection */}
@@ -280,9 +324,25 @@ const PdfPicker = () => {
 
       <canvas ref={pdfCanvasRef} className="hidden" />
 
+      {/* Management Mode Header */}
+      {managementMode && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex justify-between items-center">
+            <p className="text-blue-800 font-medium">Management Mode: Reorder and manage your plans</p>
+            <button
+              onClick={toggleManagementMode}
+              className="text-blue-600 hover:text-blue-800"
+              aria-label="Exit Management Mode"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div>
         {plans.map((plan, index) => (
-          <div key={index} className="mb-4">
+          <div key={plan.id} className="mb-4">
             {editingPlanId === plan.id ? (
               <div className="flex gap-2 mb-2">
                 <input
@@ -311,13 +371,60 @@ const PdfPicker = () => {
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-2">
-                <p>{plan.name}</p>
-                <button
-                  onClick={() => setShowRenameConfirm(plan.id)}
-                  className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Rename
-                </button>
+                {managementMode && (
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => handleMovePlanUp(plan.id)}
+                      disabled={index === 0}
+                      className={`px-2 py-1 text-sm rounded ${
+                        index === 0 
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                          : 'bg-green-500 text-white hover:bg-green-600'
+                      }`}
+                      aria-label="Move Plan Up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => handleMovePlanDown(plan.id)}
+                      disabled={index === plans.length - 1}
+                      className={`px-2 py-1 text-sm rounded ${
+                        index === plans.length - 1
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-500 text-white hover:bg-green-600'
+                      }`}
+                      aria-label="Move Plan Down"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                )}
+                <p className="flex-grow">{plan.name}</p>
+                {managementMode ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowRenameConfirm(plan.id)}
+                      className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(plan.id)}
+                      className="px-2 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                      aria-label="Delete Plan"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={toggleManagementMode}
+                    className="px-2 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
+                    aria-label="Manage Plans"
+                  >
+                    🔧
+                  </button>
+                )}
               </div>
             )}
             <img
@@ -354,6 +461,37 @@ const PdfPicker = () => {
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
                 Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4 text-red-600">⚠️ Delete Plan</h3>
+            <p className="text-gray-700 mb-4">
+              Are you sure you want to delete this plan? This will also delete all pins and images associated with this plan.
+            </p>
+            <p className="text-sm text-red-600 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (showDeleteConfirm) {
+                    handleDeletePlan(showDeleteConfirm);
+                  }
+                }}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                Delete Forever
               </button>
             </div>
           </div>

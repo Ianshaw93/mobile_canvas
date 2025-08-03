@@ -18,6 +18,7 @@ export interface DBPlan {
   width: number;
   height: number;
   display_scale: number;
+  display_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +47,7 @@ class Database {
   private static instance: Database;
   private dbConnection: SQLiteDBConnection | null = null;
   private readonly DB_NAME = 'mobile_canvas_db';
+  private readonly DB_VERSION = 2; // Increment for display_order migration
   private readonly isNative = Capacitor.isNativePlatform();
 
   private constructor() {}
@@ -87,13 +89,16 @@ class Database {
         this.DB_NAME,
         false,
         'no-encryption',
-        1,
+        this.DB_VERSION,
         false
       );
       await this.dbConnection.open();
       
       // Create tables if they don't exist
       await this.createTables();
+      
+      // Run migrations
+      await this.runMigrations();
     }
     
     return this.dbConnection;
@@ -123,6 +128,7 @@ class Database {
         width REAL NOT NULL,
         height REAL NOT NULL,
         display_scale REAL NOT NULL,
+        display_order INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
@@ -157,6 +163,39 @@ class Database {
     `);
   }
 
+  private async runMigrations(): Promise<void> {
+    const db = await this.getDBConnection();
+    
+    try {
+      // Check if display_order column exists in plans table
+      const tableInfo = await db.query("PRAGMA table_info(plans)");
+      const hasDisplayOrder = tableInfo.values?.some((column: any) => column.name === 'display_order');
+      
+      if (!hasDisplayOrder) {
+        console.log('[DB Migration] Adding display_order column to plans table');
+        
+        // Add display_order column
+        await db.execute('ALTER TABLE plans ADD COLUMN display_order INTEGER DEFAULT 0');
+        
+        // Migrate existing plans: assign display_order based on creation time
+        await db.execute(`
+          UPDATE plans 
+          SET display_order = (
+            SELECT COUNT(*) * 10 
+            FROM plans p2 
+            WHERE p2.project_id = plans.project_id 
+            AND p2.created_at <= plans.created_at
+          )
+        `);
+        
+        console.log('[DB Migration] Successfully migrated existing plans with display_order');
+      }
+    } catch (error) {
+      console.error('[DB Migration] Error running migrations:', error);
+      // Don't throw - let app continue with basic functionality
+    }
+  }
+
   // Project operations
   async createProject(project: DBProject): Promise<void> {
     const db = await this.getDBConnection();
@@ -187,14 +226,14 @@ class Database {
   async createPlan(plan: DBPlan): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.created_at, plan.updated_at]
+      'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, display_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.display_order, plan.created_at, plan.updated_at]
     );
   }
 
   async getPlansByProject(projectId: string): Promise<DBPlan[]> {
     const db = await this.getDBConnection();
-    const result = await db.query('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at ASC', [projectId]);
+    const result = await db.query('SELECT * FROM plans WHERE project_id = ? ORDER BY display_order ASC, created_at ASC', [projectId]);
     return result.values as DBPlan[] || [];
   }
 
@@ -224,6 +263,10 @@ class Database {
       setClauses.push('height = ?');
       values.push(updates.height);
     }
+    if (updates.display_order !== undefined) {
+      setClauses.push('display_order = ?');
+      values.push(updates.display_order);
+    }
 
     setClauses.push('updated_at = ?');
     values.push(new Date().toISOString());
@@ -231,6 +274,50 @@ class Database {
 
     const query = `UPDATE plans SET ${setClauses.join(', ')} WHERE id = ?`;
     await db.run(query, values);
+  }
+
+  // Plan reordering operations
+  async swapPlanOrder(planId1: string, planId2: string): Promise<void> {
+    const db = await this.getDBConnection();
+    
+    // Get current display_order values
+    const plan1 = await db.query('SELECT display_order FROM plans WHERE id = ?', [planId1]);
+    const plan2 = await db.query('SELECT display_order FROM plans WHERE id = ?', [planId2]);
+    
+    if (!plan1.values?.[0] || !plan2.values?.[0]) {
+      throw new Error('One or both plans not found');
+    }
+    
+    const order1 = plan1.values[0].display_order;
+    const order2 = plan2.values[0].display_order;
+    
+    // Swap the display_order values
+    await db.run('UPDATE plans SET display_order = ?, updated_at = ? WHERE id = ?', 
+      [order2, new Date().toISOString(), planId1]);
+    await db.run('UPDATE plans SET display_order = ?, updated_at = ? WHERE id = ?', 
+      [order1, new Date().toISOString(), planId2]);
+  }
+
+  async getAdjacentPlan(projectId: string, planId: string, direction: 'up' | 'down'): Promise<DBPlan | null> {
+    const db = await this.getDBConnection();
+    
+    // Get current plan's display_order
+    const currentPlan = await db.query('SELECT display_order FROM plans WHERE id = ?', [planId]);
+    if (!currentPlan.values?.[0]) return null;
+    
+    const currentOrder = currentPlan.values[0].display_order;
+    
+    let query: string;
+    if (direction === 'up') {
+      // Find plan with next lower display_order
+      query = 'SELECT * FROM plans WHERE project_id = ? AND display_order < ? ORDER BY display_order DESC LIMIT 1';
+    } else {
+      // Find plan with next higher display_order  
+      query = 'SELECT * FROM plans WHERE project_id = ? AND display_order > ? ORDER BY display_order ASC LIMIT 1';
+    }
+    
+    const result = await db.query(query, [projectId, currentOrder]);
+    return result.values?.[0] as DBPlan || null;
   }
 
   // Point operations

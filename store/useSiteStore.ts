@@ -123,6 +123,9 @@ interface SiteState {
   requestStoragePermission: () => Promise<boolean>;
   addProject: (name: string) => Promise<void>;
   updatePlanName: (projectId: string, planId: string, newName: string) => Promise<void>;
+  movePlanUp: (projectId: string, planId: string) => Promise<void>;
+  movePlanDown: (projectId: string, planId: string) => Promise<void>;
+  deletePlan: (projectId: string, planId: string) => Promise<void>;
   addPlan: (projectId: string, plan: Plan) => Promise<void>;
   addCanvasRef: (planId: string, canvas: HTMLCanvasElement | null, pdfData: string) => void;
   addImage: (pointId: string, image: { url: string; comment?: string }) => Promise<void>;
@@ -874,12 +877,87 @@ const useSiteStore = create<SiteState>((set, get) => ({
     }
   },
 
+  movePlanUp: async (projectId: string, planId: string) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Find the adjacent plan to swap with
+        const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'up');
+        if (adjacentPlan) {
+          await database.swapPlanOrder(planId, adjacentPlan.id);
+          console.log('✅ Plan moved up in database:', planId);
+        }
+      }
+
+      // Reload projects to get updated order
+      await get().loadProjects();
+      get().addToast?.('Plan moved up successfully', 'success');
+    } catch (error) {
+      console.error('Error moving plan up:', error);
+      get().addToast?.('Failed to move plan up', 'error');
+      throw error;
+    }
+  },
+
+  movePlanDown: async (projectId: string, planId: string) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Find the adjacent plan to swap with
+        const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'down');
+        if (adjacentPlan) {
+          await database.swapPlanOrder(planId, adjacentPlan.id);
+          console.log('✅ Plan moved down in database:', planId);
+        }
+      }
+
+      // Reload projects to get updated order
+      await get().loadProjects();
+      get().addToast?.('Plan moved down successfully', 'success');
+    } catch (error) {
+      console.error('Error moving plan down:', error);
+      get().addToast?.('Failed to move plan down', 'error');
+      throw error;
+    }
+  },
+
+  deletePlan: async (projectId: string, planId: string) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Delete from database (cascades to points and images)
+        await database.deletePlan(planId);
+        console.log('✅ Plan deleted from database:', planId);
+      }
+
+      // Update local state immediately
+      set(state => ({
+        projects: state.projects.map(project =>
+          project.id === projectId
+            ? {
+                ...project,
+                plans: project.plans.filter(plan => plan.id !== planId)
+              }
+            : project
+        )
+      }));
+
+      get().addToast?.('Plan deleted successfully', 'success');
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      get().addToast?.('Failed to delete plan', 'error');
+      throw error;
+    }
+  },
+
   addPlan: async (projectId: string, plan: Plan) => {
     console.log('[Store] Adding plan:', { projectId, plan });
     
     try {
       // ✅ Save to SQL database FIRST
       if (Capacitor.isNativePlatform()) {
+        // Get current plans to determine next display_order
+        const existingPlans = await database.getPlansByProject(projectId);
+        const maxOrder = existingPlans.reduce((max, p) => Math.max(max, p.display_order), 0);
+        const nextOrder = maxOrder + 10; // Use gaps for easy reordering
+        
         await database.createPlan({
           id: plan.id,
           project_id: projectId,
@@ -889,6 +967,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
           width: plan.dimensions.width,
           height: plan.dimensions.height,
           display_scale: plan.dimensions.displayScale,
+          display_order: nextOrder,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
