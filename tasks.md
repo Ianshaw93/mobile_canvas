@@ -13,7 +13,7 @@ Fix data persistence and memory issues using SQL-on-demand pattern: load pin dat
 
 The app now has a complete SQL-on-demand architecture that solves both memory crashes and data persistence issues while maintaining fast UI performance!
 
-**Remaining Work**: Only 3 essential polish tasks for production robustness (error handling, edge cases, testing)
+**Remaining Work**: Only 2 essential polish tasks for production robustness (error handling, edge cases, testing)
 
 ## Problem Analysis
 
@@ -94,11 +94,22 @@ The app now has a complete SQL-on-demand architecture that solves both memory cr
 
 ## Essential Future Tasks
 
-- [ ] **Task 3.1**: Add error handling for SQL operations (25 min)
+- [x] **Task 3.1**: Fix project export missing images/pins (45 min) ✅ **COMPLETED**
+  - **Problem**: Images and pins missing from zip exports since SQL-on-demand lifecycle changes
+  - **Root Cause**: Download process expects base64 data in `image.url` but gets filenames due to SQL-on-demand pattern
+  - **Impact**: Users cannot export complete project data with images
+  - **Solution Implemented**: 
+    - ✅ Created specialized `loadExportData` method in store that loads base64 data on-demand
+    - ✅ Modified download process to use export data loader instead of store data
+    - ✅ Added progress indicators and error handling for missing files
+    - ✅ Maintains SQL-on-demand pattern for memory efficiency
+  - **Files Modified**: `components/DownloadProjectButton.tsx`, `store/useSiteStore.ts`
+
+- [ ] **Task 3.2**: Add error handling for SQL operations (25 min)
   - Improve error handling and user feedback for SQL failures
   - Add retry logic for database operations
 
-- [ ] **Task 3.2**: Handle edge cases (rapid open/close, offline) (20 min)
+- [ ] **Task 3.3**: Handle edge cases (rapid open/close, offline) (20 min)
   - Prevent race conditions from rapid popup actions
   - Handle offline scenarios gracefully
 
