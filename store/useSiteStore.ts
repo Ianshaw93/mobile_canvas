@@ -553,23 +553,35 @@ const useSiteStore = create<SiteState>((set, get) => ({
   },
 
   deleteImageFromPin: async (planId: string, pointId: string, imageKey: string) => {
-    set(state => ({
-      projects: state.projects.map(project => ({
-        ...project,
-        plans: project.plans.map(plan =>
-          plan.id === planId
-            ? {
-                ...plan,
-                points: plan.points.map(point =>
-                  point.id === pointId
-                    ? { ...point, images: point.images.filter((img: Image) => img.key !== imageKey) }
-                    : point
-                )
-              }
-            : plan
-        )
-      }))
-    }));
+    try {
+      // ✅ Delete from SQL database FIRST
+      if (Capacitor.isNativePlatform()) {
+        await database.deleteImage(imageKey);
+        console.log('✅ Image deleted from SQL database:', imageKey);
+      }
+
+      // ✅ Update Zustand store
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  points: plan.points.map(point =>
+                    point.id === pointId
+                      ? { ...point, images: point.images.filter((img: Image) => img.key !== imageKey) }
+                      : point
+                  )
+                }
+              : plan
+          )
+        }))
+      }));
+    } catch (error) {
+      console.error('❌ Error deleting image:', error);
+      throw error;
+    }
   },
 
   addCommentToPin: async (planId: string, pointId: string, comment: string) => {
