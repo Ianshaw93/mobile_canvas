@@ -249,33 +249,7 @@ const PdfPicker = () => {
           <div className="text-green-600 animate-pulse mb-2">
             ↓ Add PDFs to your project here ↓
           </div>
-          <div className="flex gap-2 mb-2">
-            <DownloadProjectButton projectId={selectedProjectId} />
-            <button
-              onClick={async () => {
-                try {
-                  console.log('🔧 Starting image recovery...');
-                  const recoverImages = useSiteStore.getState().recoverCorruptedImageUrls;
-                  const result = await recoverImages();
-                  
-                  if (result.recoveredImages > 0) {
-                    alert(`✅ Recovery successful!\n\nRecovered: ${result.recoveredImages} images\nTotal corrupted: ${result.corruptedImages}\n\nYour exports should now work properly!`);
-                  } else if (result.corruptedImages === 0) {
-                    alert('✅ No corrupted images found!\n\nYour data appears to be healthy. If exports still fail, the issue may be different.');
-                  } else {
-                    alert(`⚠️ Recovery completed with issues:\n\nRecovered: ${result.recoveredImages}\nFailed: ${result.failedRecoveries}\nTotal corrupted: ${result.corruptedImages}\n\nCheck console for details.`);
-                  }
-                } catch (error) {
-                  console.error('Recovery failed:', error);
-                  alert(`❌ Recovery failed: ${error}\n\nPlease check console for details.`);
-                }
-              }}
-              className="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600 focus:ring-2 focus:ring-orange-300 text-sm font-medium"
-              title="Fix corrupted image URLs that prevent exports from working"
-            >
-              🔧 Fix Export Issues
-            </button>
-          </div>
+          <DownloadProjectButton projectId={selectedProjectId} />
         </div>
       )}
 
