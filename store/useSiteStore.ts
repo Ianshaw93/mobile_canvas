@@ -140,6 +140,13 @@ interface SiteState {
       planId: string;
     }>;
   }>;
+  recoverCorruptedImageUrls: () => Promise<{
+    totalImages: number;
+    corruptedImages: number;
+    recoveredImages: number;
+    failedRecoveries: number;
+    errors: string[];
+  }>;
 }
 
 // Helper functions to convert between DB and UI types
@@ -595,15 +602,21 @@ const useSiteStore = create<SiteState>((set, get) => ({
   addCommentToImage: async (planId: string, pointId: string, imageKey: string, comment: string) => {
     try {
       if (Capacitor.isNativePlatform()) {
-        // Save to database
-        await database.updateImage({
-          id: imageKey,
-          point_id: pointId,
-          url: '', // This will be updated by the existing image
-          comment: comment,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        // Get existing image data to preserve URL and other fields
+        const existingImages = await database.getImagesByPoint(pointId);
+        const existingImage = existingImages.find(img => img.id === imageKey);
+        
+        if (existingImage) {
+          // Update only the comment and timestamp, preserve all other data
+          await database.updateImage({
+            ...existingImage,
+            comment: comment,
+            updated_at: new Date().toISOString()
+          });
+          console.log('✅ Successfully updated comment for image:', imageKey);
+        } else {
+          console.error('❌ Could not find existing image to update:', imageKey);
+        }
       }
 
       // Update state using nested structure only
@@ -1053,6 +1066,100 @@ const useSiteStore = create<SiteState>((set, get) => ({
       };
     } catch (error) {
       console.error('Failed to load fresh pin data from SQL:', error);
+      throw error;
+    }
+  },
+
+  recoverCorruptedImageUrls: async () => {
+    try {
+      console.log('🔧 Starting image URL recovery process...');
+      
+      if (!Capacitor.isNativePlatform()) {
+        throw new Error('Recovery only available on native platforms');
+      }
+
+      const result = {
+        totalImages: 0,
+        corruptedImages: 0,
+        recoveredImages: 0,
+        failedRecoveries: 0,
+        errors: [] as string[]
+      };
+
+      // Get all images from database
+      const projects = await database.getAllProjects();
+      const allImages: DBImage[] = [];
+
+      for (const project of projects) {
+        const plans = await database.getPlansByProject(project.id);
+        for (const plan of plans) {
+          const points = await database.getPointsByPlan(plan.id);
+          for (const point of points) {
+            const images = await database.getImagesByPoint(point.id);
+            allImages.push(...images);
+          }
+        }
+      }
+
+      result.totalImages = allImages.length;
+      console.log(`📊 Found ${allImages.length} total images in database`);
+
+      // Find corrupted images (empty or invalid URLs)
+      const corruptedImages = allImages.filter(img => 
+        !img.url || 
+        img.url.trim() === '' || 
+        (!img.url.startsWith('data:image/') && !img.url.startsWith('data:application/'))
+      );
+      
+      result.corruptedImages = corruptedImages.length;
+      console.log(`❌ Found ${corruptedImages.length} corrupted image URLs`);
+
+      if (corruptedImages.length === 0) {
+        console.log('✅ No corrupted images found - recovery not needed');
+        return result;
+      }
+
+      // Attempt recovery for each corrupted image
+      for (const corruptedImage of corruptedImages) {
+        try {
+          console.log(`🔧 Attempting to recover image: ${corruptedImage.id}`);
+          
+          // Try to read the image file using the ID as filename
+          const fileData = await Filesystem.readFile({
+            directory: Directory.Data,
+            path: corruptedImage.id
+          });
+
+          if (fileData.data && fileData.data.length > 0) {
+            // Reconstruct the proper data URL
+            const recoveredUrl = `data:image/jpeg;base64,${fileData.data}`;
+            
+            // Update the database record
+            await database.updateImage({
+              ...corruptedImage,
+              url: recoveredUrl,
+              updated_at: new Date().toISOString()
+            });
+
+            result.recoveredImages++;
+            console.log(`✅ Successfully recovered image: ${corruptedImage.id}`);
+          } else {
+            result.failedRecoveries++;
+            console.log(`❌ Image file exists but is empty: ${corruptedImage.id}`);
+          }
+        } catch (error) {
+          result.failedRecoveries++;
+          const errorMsg = `Failed to recover ${corruptedImage.id}: ${error}`;
+          result.errors.push(errorMsg);
+          console.error(errorMsg);
+        }
+      }
+
+      console.log('🎉 Recovery process completed:', result);
+      return result;
+
+    } catch (error) {
+      console.error('❌ Recovery process failed:', error);
       throw error;
     }
   }

@@ -3,10 +3,56 @@ import { useRouter } from 'next/router';
 import useSiteStore from '@/store/useSiteStore';
 import { usePDF } from '@/hooks/usePDF';
 
+// Helper function to calculate accurate pin positions within thumbnail container
+const calculatePinPosition = (point: any, planDimensions: any, canvasDimensions: any) => {
+  const containerSize = 96; // 96px × 96px container (w-24 h-24)
+  
+  // Pin coordinates are stored relative to canvasDimensions (1.5x scale), not plan.dimensions (1.0x)
+  // Both canvas and thumbnail use the same 1.5x scale, so aspect ratios match
+  const canvasAspectRatio = canvasDimensions.width / canvasDimensions.height;
+  
+  // Pin coordinates are stored relative to canvasDimensions (1.5x scale)
+  
+  let imageWidth, imageHeight, offsetX, offsetY;
+  
+  if (canvasAspectRatio > 1) {
+    // Landscape: image fills width, letterboxed top/bottom
+    imageWidth = containerSize;
+    imageHeight = containerSize / canvasAspectRatio;
+    offsetX = 0;
+    offsetY = (containerSize - imageHeight) / 2;
+  } else if (canvasAspectRatio < 1) {
+    // Portrait: image fills height, pillarboxed left/right  
+    imageWidth = containerSize * canvasAspectRatio;
+    imageHeight = containerSize;
+    offsetX = (containerSize - imageWidth) / 2;
+    offsetY = 0;
+  } else {
+    // Square: fills entire container
+    imageWidth = containerSize;
+    imageHeight = containerSize;
+    offsetX = 0;
+    offsetY = 0;
+  }
+  
+  // Calculate pin position within the actual image area
+  // Pin coordinates are in canvasDimensions space, so scale to thumbnail container
+  const pinX = offsetX + (point.x / canvasDimensions.width) * imageWidth;
+  const pinY = offsetY + (point.y / canvasDimensions.height) * imageHeight;
+  
+  // Position calculated relative to actual image area within container
+  
+  return {
+    left: `${pinX}px`,
+    top: `${pinY}px`,
+  };
+};
+
 const PinListPage = () => {
   const router = useRouter();
   const { pdfId } = router.query as { pdfId: string };
   const getPlan = useSiteStore((state) => state.getPlan);
+  const canvasDimensions = useSiteStore((state) => state.canvasDimensions);
   const plan = getPlan(pdfId);
   const points = plan?.points || [];
   const pdfjs = usePDF();
@@ -131,9 +177,7 @@ const PinListPage = () => {
                             width: '12px', 
                             height: '12px',
                             // @ts-ignore
-                            left: `${(point.x / plan.dimensions.width) * 100}%`,
-                            // @ts-ignore
-                            top: `${(point.y / plan.dimensions.height) * 100}%`,
+                            ...calculatePinPosition(point, plan.dimensions, canvasDimensions),
                             transform: 'translate(-50%, -50%)', // Center the pin
                           }}
                         />
