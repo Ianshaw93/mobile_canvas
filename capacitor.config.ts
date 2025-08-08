@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'http',
     iosScheme: 'myapp',
-    url: "http://192.168.0.14:3000",
+    url: "http://192.168.0.53:3000",
     allowNavigation: ["*"],
     cleartext: true
   },

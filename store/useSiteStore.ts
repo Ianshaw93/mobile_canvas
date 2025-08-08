@@ -140,6 +140,21 @@ interface SiteState {
       planId: string;
     }>;
   }>;
+  loadExportData: (projectId: string) => Promise<{
+    project: Project;
+    plans: Array<{
+      plan: Plan;
+      points: Array<{
+        point: Point;
+        images: Array<{
+          key: string;
+          url: string;
+          data: string; // base64 data
+          comment?: string;
+        }>;
+      }>;
+    }>;
+  }>;
 }
 
 // Helper functions to convert between DB and UI types
@@ -1059,6 +1074,111 @@ const useSiteStore = create<SiteState>((set, get) => ({
       };
     } catch (error) {
       console.error('Failed to load fresh pin data from SQL:', error);
+      throw error;
+    }
+  },
+
+  loadExportData: async (projectId: string) => {
+    try {
+      console.log('📦 Loading export data for project:', projectId);
+      
+      if (!Capacitor.isNativePlatform()) {
+        throw new Error('Export only available in native mode');
+      }
+
+      // Load project from database
+      const dbProject = await database.getProject(projectId);
+      if (!dbProject) {
+        throw new Error(`Project ${projectId} not found`);
+      }
+
+      // Load all plans for this project
+      const dbPlans = await database.getPlansByProject(projectId);
+      
+      // Load complete data for each plan
+      const plansWithData = await Promise.all(
+        dbPlans.map(async (dbPlan) => {
+          // Load all points for this plan
+          const dbPoints = await database.getPointsByPlan(dbPlan.id);
+          
+          // Load complete data for each point
+          const pointsWithData = await Promise.all(
+            dbPoints.map(async (dbPoint) => {
+              // Load all images for this point
+              const dbImages = await database.getImagesByPoint(dbPoint.id);
+              
+              // Load base64 data for each image
+              const imagesWithData = await Promise.all(
+                dbImages.map(async (dbImage) => {
+                  try {
+                    // Load image data from filesystem
+                    const readFile = await Filesystem.readFile({
+                      directory: Directory.Data,
+                      path: dbImage.id // id contains the filename
+                    });
+
+                    return {
+                      key: dbImage.id,
+                      url: dbImage.url,
+                      data: typeof readFile.data === 'string' ? readFile.data : '', // ensure string type
+                      comment: dbImage.comment
+                    };
+                  } catch (error) {
+                    console.error(`Error loading image file ${dbImage.id}:`, error);
+                    // Return metadata even if file loading fails
+                    return {
+                      key: dbImage.id,
+                      url: dbImage.url,
+                      data: '', // empty data if file load fails
+                      comment: dbImage.comment
+                    };
+                  }
+                })
+              );
+
+              return {
+                point: convertDBPointToPoint(dbPoint, []), // Convert without images
+                images: imagesWithData
+              };
+            })
+          );
+
+          return {
+            plan: {
+              id: dbPlan.id,
+              name: dbPlan.name,
+              url: dbPlan.url,
+              thumbnail: dbPlan.thumbnail,
+              dimensions: {
+                width: dbPlan.width,
+                height: dbPlan.height,
+                displayScale: dbPlan.display_scale
+              },
+              points: [], // Will be populated separately
+              images: [],
+              planId: dbPlan.id,
+              projectId: dbProject.id
+            },
+            points: pointsWithData
+          };
+        })
+      );
+
+      console.log('📦 Export data loaded successfully:', {
+        projectId,
+        planCount: plansWithData.length,
+        totalPoints: plansWithData.reduce((sum, p) => sum + p.points.length, 0),
+        totalImages: plansWithData.reduce((sum, p) => 
+          sum + p.points.reduce((pSum, pt) => pSum + pt.images.length, 0), 0
+        )
+      });
+
+      return {
+        project: convertDBProjectToProject(dbProject, []),
+        plans: plansWithData
+      };
+    } catch (error) {
+      console.error('Failed to load export data:', error);
       throw error;
     }
   }
