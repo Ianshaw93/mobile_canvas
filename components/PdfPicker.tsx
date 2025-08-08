@@ -67,9 +67,10 @@ const PdfPicker = () => {
   const movePlanUp = useSiteStore((state) => state.movePlanUp);
   const movePlanDown = useSiteStore((state) => state.movePlanDown);
   const deletePlan = useSiteStore((state) => state.deletePlan);
-  const [showRenameConfirm, setShowRenameConfirm] = useState<string | null>(null);
+
   const [managementMode, setManagementMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [movingPlanId, setMovingPlanId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -208,9 +209,12 @@ const PdfPicker = () => {
   const handleMovePlanUp = async (planId: string) => {
     if (selectedProjectId) {
       try {
+        setMovingPlanId(planId); // Show loading state
         await movePlanUp(selectedProjectId, planId);
       } catch (error) {
         console.error('Error moving plan up:', error);
+      } finally {
+        setMovingPlanId(null); // Clear loading state
       }
     }
   };
@@ -218,9 +222,12 @@ const PdfPicker = () => {
   const handleMovePlanDown = async (planId: string) => {
     if (selectedProjectId) {
       try {
+        setMovingPlanId(planId); // Show loading state
         await movePlanDown(selectedProjectId, planId);
       } catch (error) {
         console.error('Error moving plan down:', error);
+      } finally {
+        setMovingPlanId(null); // Clear loading state
       }
     }
   };
@@ -375,27 +382,31 @@ const PdfPicker = () => {
                   <div className="flex flex-col gap-1">
                     <button
                       onClick={() => handleMovePlanUp(plan.id)}
-                      disabled={index === 0}
+                      disabled={index === 0 || movingPlanId === plan.id}
                       className={`px-2 py-1 text-sm rounded ${
                         index === 0 
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : movingPlanId === plan.id
+                          ? 'bg-yellow-500 text-white animate-pulse cursor-not-allowed'
                           : 'bg-green-500 text-white hover:bg-green-600'
                       }`}
                       aria-label="Move Plan Up"
                     >
-                      ↑
+                      {movingPlanId === plan.id ? '⏳' : '↑'}
                     </button>
                     <button
                       onClick={() => handleMovePlanDown(plan.id)}
-                      disabled={index === plans.length - 1}
+                      disabled={index === plans.length - 1 || movingPlanId === plan.id}
                       className={`px-2 py-1 text-sm rounded ${
                         index === plans.length - 1
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : movingPlanId === plan.id
+                          ? 'bg-yellow-500 text-white animate-pulse cursor-not-allowed'
                           : 'bg-green-500 text-white hover:bg-green-600'
                       }`}
                       aria-label="Move Plan Down"
                     >
-                      ↓
+                      {movingPlanId === plan.id ? '⏳' : '↓'}
                     </button>
                   </div>
                 )}
@@ -403,7 +414,10 @@ const PdfPicker = () => {
                 {managementMode ? (
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setShowRenameConfirm(plan.id)}
+                      onClick={() => {
+                        setEditingPlanId(plan.id);
+                        setEditingName(plan.name || '');
+                      }}
                       className="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
                     >
                       Rename
@@ -437,35 +451,6 @@ const PdfPicker = () => {
         ))}
       </div>
 
-      {/* Rename Confirmation Modal */}
-      {showRenameConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-4">Are you sure you want to rename this PDF?</h3>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowRenameConfirm(null)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const plan = plans.find(p => p.id === showRenameConfirm);
-                  if (plan) {
-                    setEditingPlanId(plan.id);
-                    setEditingName(plan.name || '');
-                  }
-                  setShowRenameConfirm(null);
-                }}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Rename
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
