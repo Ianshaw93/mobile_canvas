@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { requestFileSystemPermissions } from '@/components/requestiPermission';
+import { PinIssuePicker } from './PinIssuePicker';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type ImageData = {
@@ -47,6 +48,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const updateProjectImages = useSiteStore((state) => state.updateProjectImages);
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
+  const [issueSelection, setIssueSelection] = useState<{ labels: string[]; isOther?: boolean; otherAt?: 'category' | 'type' | 'description' } | null>(null);
   // @ts-ignore
   const [imageArray, setImageArray] = useState<ImageData[]>([]);
   console.log("imageArray@top: ", imageArray)
@@ -247,18 +249,18 @@ const CameraLogic= ({selectedPoint, planId}) => {
         console.error('Error loading files:', error);
       }
     }
-    const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newComment = e.target.value;
       setComment(newComment);
 
     };
 
     const handleCommentBlur = () => {
-      if (comment && comment.trim() !== '') {
-        // Save comment if it has content (regardless of whether it changed)
-        // This ensures comments are saved even when selectedPoint.comment is undefined
-        console.log('💬 Saving point comment:', comment);
-        addCommentToPin(planId, selectedPoint.id, comment);
+      const path = issueSelection?.labels?.length ? `[${issueSelection.labels.join(' > ')}]` : '';
+      const finalComment = path ? (comment?.trim() ? `${path} ${comment.trim()}` : path) : comment;
+      if (finalComment && finalComment.trim() !== '') {
+        console.log('💬 Saving point comment:', finalComment);
+        addCommentToPin(planId, selectedPoint.id, finalComment);
       }
     };
 
@@ -500,6 +502,11 @@ const CameraLogic= ({selectedPoint, planId}) => {
             );
           })}
           
+          {/* Issue cascader */}
+          <div className="mb-3">
+            <PinIssuePicker onChange={setIssueSelection} />
+          </div>
+
           {/* Pin comment */}
           <textarea
             placeholder="Write a comment..."

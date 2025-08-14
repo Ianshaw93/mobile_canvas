@@ -1,0 +1,130 @@
+﻿IssueCategory,IssueType,IssueDescription
+1. Construction,1. Fire Stopping,1. No stopping provided
+1. Construction,1. Fire Stopping,2. Wrong installation
+1. Construction,1. Fire Stopping,3. Inappropriate product
+1. Construction,1. Fire Stopping,4. Unknown material
+1. Construction,1. Fire Stopping,5. Unable to confirm construction
+1. Construction,1. Fire Stopping,6. Other
+1. Construction,2. Dry lining,1. Exposed studwork
+1. Construction,2. Dry lining,2. Incorrect head detail
+1. Construction,2. Dry lining,3. Unknown head detail
+1. Construction,2. Dry lining,4. Incorrect centres
+1. Construction,2. Dry lining,5. Unknown centres
+1. Construction,2. Dry lining,6. Incorrect jointing / overlapping
+1. Construction,2. Dry lining,7. Unknown jointing / overlapping
+1. Construction,2. Dry lining,8. Incorrect boards
+1. Construction,2. Dry lining,9. Unknown boards
+1. Construction,2. Dry lining,10. Insufficient board coverage
+1. Construction,2. Dry lining,11. Incorrect / unknown mastic
+1. Construction,2. Dry lining,12. Other
+1. Construction,3. Fire Dampers,1. No support provided
+1. Construction,3. Fire Dampers,2. Wrong installation
+1. Construction,3. Fire Dampers,3. Inappropriate product
+1. Construction,3. Fire Dampers,4. Unknown material packing
+1. Construction,3. Fire Dampers,5. Unable to confirm construction
+1. Construction,3. Fire Dampers,6. Other
+1. Construction,4. Other,1. Other
+2. Active Systems,1. Fire Alarm,1. Damage
+2. Active Systems,1. Fire Alarm,2. Incorrect Spacing
+2. Active Systems,1. Fire Alarm,3. No coverage
+2. Active Systems,1. Fire Alarm,4. Incorrect Type
+2. Active Systems,1. Fire Alarm,5. Fault
+2. Active Systems,1. Fire Alarm,6. Other
+2. Active Systems,2. Sprinkler System,1. Damage
+2. Active Systems,2. Sprinkler System,2. Incorrect Spacing
+2. Active Systems,2. Sprinkler System,3. No coverage
+2. Active Systems,2. Sprinkler System,4. Incorrect Type
+2. Active Systems,2. Sprinkler System,5. Fault
+2. Active Systems,2. Sprinkler System,6. Other
+2. Active Systems,3. Other,1. Damage
+2. Active Systems,3. Other,2. Incorrect Spacing
+2. Active Systems,3. Other,3. No coverage
+2. Active Systems,3. Other,4. Incorrect Type
+2. Active Systems,3. Other,5. Fault
+2. Active Systems,3. Other,6. Other
+3. Fire Door,1. Door leaf ,1.1 Not free from damage 
+3. Fire Door,1. Door leaf ,1.2 Not fitting plumb level and square in frame 
+3. Fire Door,1. Door leaf ,1.3 No consistent gap between door and frame (as specified on fire certificate) 
+3. Fire Door,1. Door leaf ,1.4 No label/s on top of door undamaged 
+3. Fire Door,2. Door Frame ,2.1 Not free from damage 
+3. Fire Door,2. Door Frame ,2.2 Not suitable for the fire door rating 
+3. Fire Door,2. Door Frame ,2.3 Not compatible with the door assembly or doorset 
+3. Fire Door,2. Door Frame ,2.4 Not label/s on top of door undamaged 
+3. Fire Door,2. Door Frame ,"2.5 Not correct number of, specification, size and location of frame to wall fixings "
+3. Fire Door,3. Fire and Smoke seals ,3.1 Not compatible with the door assembly or doorset 
+3. Fire Door,3. Fire and Smoke seals ,3.2 Not suitable for the fire door or smoke rating 
+3. Fire Door,3. Fire and Smoke seals ,3.3 Intumescent seals are not full length in door edge or frame
+3. Fire Door,3. Fire and Smoke seals ,3.4 Seals are not flush in grooves
+3. Fire Door,3. Fire and Smoke seals ,3.5 Smoke seal does not fill the gap between the door and the frame on all sides
+3. Fire Door,3. Fire and Smoke seals ,3.6 Not free from damage 
+3. Fire Door,3. Fire and Smoke seals ,3.7 Not compatible with the door assembly or doorset 
+3. Fire Door,4. Latch or lock ,4.1 Not suitable for fire door rating 
+3. Fire Door,4. Latch or lock ,4.2 Not CE marked for fire performance 
+3. Fire Door,4. Latch or lock ,4.3 Engages securely with the keep in the frame or lining 
+3. Fire Door,4. Latch or lock ,4.4 Not suitable for the fire door rating
+3. Fire Door,4. Latch or lock ,4.5 Not compatible with the door assembly or doorset 
+3. Fire Door,4. Latch or lock ,4.6 Not fitted with correct intumescent pads if specified in the installation instructions
+3. Fire Door,4. Latch or lock ,4.7 No label/s on top of door undamaged 
+3. Fire Door,5. Hinges ,5.1 Not fitted with correct intumescent pads if specified in installation instructions 
+3. Fire Door,5. Hinges ,5.2 Not fitted with the hinge manufacturers fixings that have been supplied and fire tested 
+3. Fire Door,5. Hinges ,5.3 Not CE marked for fire performance where applicable 
+3. Fire Door,5. Hinges ,5.4 Not fitted with correct fixings (specification and length) 
+3. Fire Door,5. Hinges ,5.5 Not all fixings in place 
+3. Fire Door,5. Hinges ,5.6 Not free from damage 
+3. Fire Door,5. Hinges ,5.7 Not suitable for the fire door rating 
+3. Fire Door,5. Hinges ,5.8 Not compatible with the door assembly or doorset 
+3. Fire Door,6. Door closer (if required) ,6.1 Not fitted with correct intumescent pads if specified in the installation instructions 
+3. Fire Door,6. Door closer (if required) ,6.2 Not CE marked for fire performance where applicable 
+3. Fire Door,6. Door closer (if required) ,6.3 Not fitted with correct fixings (specification and length) 
+3. Fire Door,6. Door closer (if required) ,6.4 Not all fixings in place 
+3. Fire Door,6. Door closer (if required) ,6.5 Not free from damage 
+3. Fire Door,6. Door closer (if required) ,6.6 Not suitable for the fire door rating 
+3. Fire Door,6. Door closer (if required) ,6.7 Not compatible with the door assembly or doorset 
+3. Fire Door,7. Signage ,7.1 Correct signage is not in place and / or securely fixed to the door 
+3. Fire Door,8. Other ironmongery ,8.1 Not CE marked for fire use on fire doors where applicable 
+3. Fire Door,8. Other ironmongery ,8.2 Not fitted with correct intumescent pads if specified in the installation instructions 
+3. Fire Door,8. Other ironmongery ,8.3 Not fitted with the ironmongery manufacturers fixings that have been supplied and fire tested 
+3. Fire Door,8. Other ironmongery ,8.4 Not fitted with correct fixings (specification and length) 
+3. Fire Door,8. Other ironmongery ,8.5 Not all fixings in place 
+3. Fire Door,8. Other ironmongery ,8.6 Not all components free from damage 
+3. Fire Door,8. Other ironmongery ,8.7 Not suitable for the fire door rating 
+3. Fire Door,8. Other ironmongery ,8.8 Not compatible with the door assembly or doorset 
+3. Fire Door,9. Vision panels or other apertures cut in the door leaf for ironmongery such as letter plates or air transfer grilles ,"9.1 Not all ironmongery, glass, glazing beads, seals and intumescent materials are free from damage and secured to the door "
+3. Fire Door,9. Vision panels or other apertures cut in the door leaf for ironmongery such as letter plates or air transfer grilles ,9.2 No glazed aperture label or plug at the top of the door to prove that the door is glazed with compliant materials and glazing systems by a trained door processor 
+3. Fire Door,9. Vision panels or other apertures cut in the door leaf for ironmongery such as letter plates or air transfer grilles ,9.3 Site cutting of apertures and on site glazing has occurred
+3. Fire Door,9. Vision panels or other apertures cut in the door leaf for ironmongery such as letter plates or air transfer grilles ,9.4 Gap between the wall and the frame behind the architrave excessive 
+3. Fire Door,9. Vision panels or other apertures cut in the door leaf for ironmongery such as letter plates or air transfer grilles ,9.5 Suitable materials and intumescent materials and mastics have not been used to fill the any gap as detailed on the installation instructions or the Fire Certificate data sheet 
+3. Fire Door,10. Gap ,"10.1 Gaps (top, sides, bottom, centre) are not correct to installation instructions "
+3. Fire Door,10. Gap ,10.2 Gaps excessive at top
+3. Fire Door,10. Gap ,10.3 Gaps excessive at sides
+3. Fire Door,10. Gap ,10.4 Gaps excessive at bottom
+3. Fire Door,10. Gap ,10.5 Gaps excessive at centre
+3. Fire Door,11. Wall type ,11.1 Not of suitable fire resistance for the fire door assembly or doorset rating 
+3. Fire Door,12. Threshold seals ,12.1 When the door is closed the threshold seal does not engage fully and across its entire length 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.1 No label/s are in place on the top of the door and/or the frame. 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.2 No installation instructions 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.3 No maintenance instructions 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.4 No reference to the CF / CAF number on the label 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.5 No fire certificate (CF) if applicable 
+3. Fire Door,13. Handover of documentation to prove fire performance ,13.6 No contact manufacturer if further information is required 
+3. Fire Door,14. Label ,"14.1 Not in place, correct or undamaged"
+3. Fire Door,15. Other,Other
+4. Site Fire Safety,1. General Fire Precautions,1. Temporary Fire Stopping
+4. Site Fire Safety,1. General Fire Precautions,2. Storey Core Enclosure
+4. Site Fire Safety,1. General Fire Precautions,3. Travel distances
+4. Site Fire Safety,1. General Fire Precautions,4. Width of Escape routes
+4. Site Fire Safety,1. General Fire Precautions,5. Alarm Systems
+4. Site Fire Safety,1. General Fire Precautions,6. Assembly Points
+4. Site Fire Safety,1. General Fire Precautions,7. Fire Signage
+4. Site Fire Safety,1. General Fire Precautions,8. Fire Extinguishers
+4. Site Fire Safety,1. General Fire Precautions,9. Emergency Lighting
+4. Site Fire Safety,1. General Fire Precautions,10. Hanging Cables
+4. Site Fire Safety,1. General Fire Precautions,11. Exits Blocked
+4. Site Fire Safety,1. General Fire Precautions,12. Fire Loading in stairs
+4. Site Fire Safety,1. General Fire Precautions,13. Unprotected storage of Materials
+4. Site Fire Safety,1. General Fire Precautions,14. Other
+4. Site Fire Safety,2. Management,1. Documentation
+4. Site Fire Safety,2. Management,2. Implementation
+4. Site Fire Safety,2. Management,3. Recommendation 
+4. Site Fire Safety,2. Management,4. Other
+4. Site Fire Safety,3. Other,1. Other
