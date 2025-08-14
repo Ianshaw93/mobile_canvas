@@ -1,4 +1,5 @@
 import React from 'react';
+import { slugify } from '@/utils/issueComment';
 
 type IssueNode = {
 	id: string;
@@ -105,11 +106,13 @@ const sortByOrderThenLabel = <T extends { order?: number; label: string }>(a: T,
 export function PinIssuePicker({
 	csvPath = '/Issues_Master%20sheet%20REV01.csv',
 	taxonomy: taxonomyProp = ISSUE_TREE,
+	initial,
 	onChange,
 	disabled,
 }: {
 	csvPath?: string;
 	taxonomy?: Record<string, IssueNode>;
+	initial?: { cat?: string; type?: string; desc?: string };
 	onChange: (v: { categoryId?: string; typeId?: string; descriptionId?: string; labels: string[]; isOther: boolean; otherAt?: 'category' | 'type' | 'description' }) => void;
 	disabled?: boolean;
 }) {
@@ -134,9 +137,9 @@ export function PinIssuePicker({
 		fetchCsv();
 		return () => { cancelled = true; };
 	}, [csvPath]);
-	const [categoryId, setCategoryId] = React.useState<string | undefined>();
-	const [typeId, setTypeId] = React.useState<string | undefined>();
-	const [descriptionId, setDescriptionId] = React.useState<string | undefined>();
+	const [categoryId, setCategoryId] = React.useState<string | undefined>(initial?.cat ? slugify(initial.cat) : undefined);
+	const [typeId, setTypeId] = React.useState<string | undefined>(initial?.type ? slugify(initial.type) : undefined);
+	const [descriptionId, setDescriptionId] = React.useState<string | undefined>(initial?.desc ? slugify(initial.desc) : undefined);
 
 	const categories = React.useMemo(() => Object.values(taxonomy).sort(sortByOrderThenLabel), [taxonomy]);
 	const types = React.useMemo(() => {

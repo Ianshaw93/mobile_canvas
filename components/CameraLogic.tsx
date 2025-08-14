@@ -6,6 +6,7 @@ import useSiteStore from '@/store/useSiteStore';
 import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
 import { requestFileSystemPermissions } from '@/components/requestiPermission';
 import { PinIssuePicker } from './PinIssuePicker';
+import { buildIssueHeader, parseIssueComment, IssueMeta, slugify } from '@/utils/issueComment';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type ImageData = {
@@ -49,6 +50,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
   const [issueSelection, setIssueSelection] = useState<{ labels: string[]; isOther?: boolean; otherAt?: 'category' | 'type' | 'description' } | null>(null);
+  const [initialIssueLabels, setInitialIssueLabels] = useState<{ cat?: string; type?: string; desc?: string } | null>(null);
   // @ts-ignore
   const [imageArray, setImageArray] = useState<ImageData[]>([]);
   console.log("imageArray@top: ", imageArray)
@@ -256,9 +258,30 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     const handleCommentBlur = () => {
-      const path = issueSelection?.labels?.length ? `[${issueSelection.labels.join(' > ')}]` : '';
-      const finalComment = path ? (comment?.trim() ? `${path} ${comment.trim()}` : path) : comment;
-      if (finalComment && finalComment.trim() !== '') {
+      // Prefer in-session selection; otherwise use initial labels parsed from existing comment
+      const labels = issueSelection?.labels?.length ? issueSelection.labels : [
+        initialIssueLabels?.cat,
+        initialIssueLabels?.type,
+        initialIssueLabels?.desc,
+      ].filter(Boolean) as string[];
+
+      const [cat, type, desc] = labels;
+      let finalComment = (comment || '').trim();
+
+      if (cat || type || desc) {
+        const meta: IssueMeta = {
+          catId: cat ? slugify(cat) : undefined,
+          typeId: type ? slugify(type) : undefined,
+          descId: desc ? slugify(desc) : undefined,
+          cat,
+          type,
+          desc,
+        };
+        const header = buildIssueHeader(meta);
+        finalComment = `${header}${finalComment ? ' ' + finalComment : ''}`;
+      }
+
+      if (finalComment) {
         console.log('💬 Saving point comment:', finalComment);
         addCommentToPin(planId, selectedPoint.id, finalComment);
       }
@@ -330,7 +353,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
         
         // Update LOCAL component state with fresh data (don't update store)
         setImageArray(freshData.imageArrayWithData);
-        setComment(freshData.point.comment || '');
+        const parsed = parseIssueComment(freshData.point.comment || '');
+        setComment(parsed.text || '');
+        setInitialIssueLabels({ cat: parsed.meta?.cat, type: parsed.meta?.type, desc: parsed.meta?.desc });
         
         // Set image comments from fresh SQL data
         const comments: { [key: string]: string } = {};
@@ -349,7 +374,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
         if (selectedPoint?.images) {
           console.log('🔄 Falling back to selectedPoint.images data');
           loadFileData(selectedPoint.images);
-          setComment(selectedPoint.comment || '');
+          const parsedFallback = parseIssueComment(selectedPoint.comment || '');
+          setComment(parsedFallback.text || '');
+          setInitialIssueLabels({ cat: parsedFallback.meta?.cat, type: parsedFallback.meta?.type, desc: parsedFallback.meta?.desc });
           const comments: { [key: string]: string } = {};
           selectedPoint.images.forEach((img: any) => {
             if (img.comment) {
