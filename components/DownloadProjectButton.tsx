@@ -115,6 +115,98 @@ const generatePinPreviewImage = async (pdfjs, plan, point, pointIndex, size = 30
   });
 };
 
+// @ts-ignore
+const generatePlanOverviewImage = async (pdfjs, plan, points, includePins = true, exportScale = 1.5) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d', {
+        alpha: false,
+        willReadFrequently: false
+      });
+
+      // Load PDF data
+      const base64Data = plan.url.split(',')[1];
+      const binaryString = window.atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const pdfData = bytes.buffer;
+
+      // Load the PDF
+      const loadingTask = pdfjs.getDocument({ data: pdfData });
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+
+      // Render full page
+      const viewport = page.getViewport({ scale: exportScale });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({
+        // @ts-ignore
+        canvasContext: context,
+        viewport,
+        background: 'white'
+      }).promise;
+
+      if (includePins && context) {
+        // Preload pin image
+        const pinImage = new Image();
+        pinImage.src = '/siteright_pin.png';
+        await new Promise((imgResolve, imgReject) => {
+          if (pinImage.complete) return imgResolve(true);
+          pinImage.onload = () => imgResolve(true);
+          pinImage.onerror = () => imgReject(new Error('Failed to load pin image'));
+        });
+
+        const displayScale = plan?.dimensions?.displayScale || 1.5;
+        const scaleFactor = exportScale / displayScale;
+        // Make pins larger relative to the full plan (match visual prominence of previews)
+        const relativePinHeight = Math.max(20, 0.05 * Math.min(viewport.width, viewport.height));
+
+        // Draw each pin using same indexing as list order
+        // points can be [{ point, images }] or raw points
+        // @ts-ignore
+        points.forEach((pt, idx) => {
+          const p = pt.point || pt;
+          const pinHeight = relativePinHeight;
+          const pinWidth = pinHeight * (800 / 1080);
+
+          const drawX = (p.x * scaleFactor) - (pinWidth / 2);
+          const drawY = (p.y * scaleFactor) - pinHeight;
+
+          // @ts-ignore
+          context.drawImage(pinImage, drawX, drawY, pinWidth, pinHeight);
+
+          // Label
+          // @ts-ignore
+          context.fillStyle = 'white';
+          // @ts-ignore
+          const fontSize = 12 * (pinHeight / 30); // scale label proportionally to pin size
+          context.font = `${fontSize}px Arial`;
+          // @ts-ignore
+          context.textAlign = 'center';
+          // @ts-ignore
+          context.textBaseline = 'middle';
+          const labelX = (p.x * scaleFactor);
+          const labelY = (p.y * scaleFactor) - pinHeight * (13 / 20);
+          // @ts-ignore
+          context.fillText(String(idx + 1), labelX, labelY);
+        });
+      }
+
+      // Export PNG (crisper labels)
+      const pngData = canvas.toDataURL('image/png').split(',')[1];
+      resolve(pngData);
+    } catch (error) {
+      console.error('Error generating plan overview image:', error);
+      reject(error);
+    }
+  });
+};
+
 const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<string>('');
@@ -352,6 +444,19 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           const pdfData = plan.url.split(',')[1]; // Remove data URL prefix
           const fileName = `${plan.name || plan.id}.pdf`;
           pdfsFolder?.file(fileName, pdfData, { base64: true });
+        }
+
+        // Generate full-plan overview images (with pins and clean)
+        try {
+          const exportScale = plan?.dimensions?.displayScale || 1.5; // match viewer scale by default
+          const baseName = `${plan.name || plan.id}`;
+          const withPinsPng = await generatePlanOverviewImage(pdfjs, plan, planData.points, true, exportScale);
+          const cleanPng = await generatePlanOverviewImage(pdfjs, plan, planData.points, false, exportScale);
+          // Store alongside the existing plan export assets
+          pdfsFolder?.file(`${baseName}.png`, withPinsPng as string, { base64: true });
+          pdfsFolder?.file(`${baseName}_clean.png`, cleanPng as string, { base64: true });
+        } catch (error) {
+          console.error(`Error generating overview images for plan ${plan.id}:`, error);
         }
 
         // Process each point
