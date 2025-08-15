@@ -222,3 +222,20 @@ The app now has a complete SQL-on-demand architecture that solves both memory cr
 ✅ **Data Cleanup**: Proper deletion removes all associated data  
 ✅ **Mobile Friendly**: Arrow buttons work well on touch screens  
 ✅ **Pin Identification**: Users can quickly locate and identify specific pins
+
+### **Task 4.4**: Generate Overall Plan Images (with pins and without pins)
+**Priority**: High  
+**Estimated Time**: 2-3 hours  
+
+**Goal**: Produce two exportable assets for each plan: (1) an overall plan image with all SVG pin locations overlaid, and (2) a clean plan image without any pins.
+
+**User Story**: As a user, I want to export a single overview image showing all pin locations on the plan, and also export a clean version without pins, so I can share both a reference map and a printable/clean plan.
+
+**Acceptance Criteria**:
+- A user can generate two variants from the plan: "Overview (with pins)" and "Clean (no pins)".
+- Pin overlay uses the same coordinates, scale, and transforms as the viewer to ensure exact positioning.
+- Pin styling (color/shape/labels) matches in-app pin appearance; labels remain legible at export resolution.
+- Export formats: PNG (default) with optional PDF; dimensions can be original plan size or selectable resolutions.
+- Filenames use the existing export naming for the with-pins variant; the no-pins variant appends `_clean` (e.g., `<existing_export_name>.png` and `<existing_export_name>_clean.png`).
+- Exports integrate with existing project export flow so both assets are included in the zip when exporting a project.
+- Performance: export completes within a reasonable time for large plans without memory spikes.
