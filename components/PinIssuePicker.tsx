@@ -304,10 +304,6 @@ function stripPrefix(label: string): { clean: string; isOther: boolean } {
 	return { clean, isOther: isOtherLabel };
 }
 
-function slugify(label: string): string {
-	return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
 function buildTaxonomyFromRows(rows: CsvRow[]): Record<string, IssueNode> {
 	const tree: Record<string, IssueNode> = {};
 	for (const row of rows) {
