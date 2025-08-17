@@ -531,7 +531,28 @@ const CameraLogic= ({selectedPoint, planId}) => {
           
           {/* Issue cascader */}
           <div className="mb-3">
-            <PinIssuePicker onChange={setIssueSelection} />
+            <PinIssuePicker
+              onChange={(sel) => {
+                setIssueSelection(sel);
+                // Persist header immediately so cascade remains even if textarea isn't blurred
+                const labels = sel.labels || [];
+                const [cat, type, desc] = labels;
+                if (cat || type || desc) {
+                  const meta: IssueMeta = {
+                    catId: cat ? slugify(cat) : undefined,
+                    typeId: type ? slugify(type) : undefined,
+                    descId: desc ? slugify(desc) : undefined,
+                    cat,
+                    type,
+                    desc,
+                  };
+                  const header = buildIssueHeader(meta);
+                  const composed = `${header}${comment?.trim() ? ' ' + comment.trim() : ''}`;
+                  addCommentToPin(planId, selectedPoint.id, composed);
+                }
+              }}
+              initial={initialIssueLabels || undefined}
+            />
           </div>
 
           {/* Pin comment */}

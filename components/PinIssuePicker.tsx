@@ -141,6 +141,15 @@ export function PinIssuePicker({
 	const [typeId, setTypeId] = React.useState<string | undefined>(initial?.type ? slugify(initial.type) : undefined);
 	const [descriptionId, setDescriptionId] = React.useState<string | undefined>(initial?.desc ? slugify(initial.desc) : undefined);
 
+	// If initial changes (e.g., from parsed header) or taxonomy loads later, seed selection once
+	React.useEffect(() => {
+		if (!initial) return;
+		// Only set if user hasn't already selected in-session
+		setCategoryId(prev => prev ?? (initial.cat ? slugify(initial.cat) : undefined));
+		setTypeId(prev => prev ?? (initial.type ? slugify(initial.type) : undefined));
+		setDescriptionId(prev => prev ?? (initial.desc ? slugify(initial.desc) : undefined));
+	}, [initial, taxonomy]);
+
 	const categories = React.useMemo(() => Object.values(taxonomy).sort(sortByOrderThenLabel), [taxonomy]);
 	const types = React.useMemo(() => {
 		if (!categoryId) return [];
@@ -159,12 +168,35 @@ export function PinIssuePicker({
 
 	const labels = React.useMemo(() => {
 		const out: string[] = [];
-		if (categoryId) out.push(taxonomy[categoryId]!.label);
-		if (typeId && otherAt !== 'category') out.push(taxonomy[categoryId!]!.children![typeId!]!.label);
-		if (descriptionId && !otherAt) out.push(taxonomy[categoryId!]!.children![typeId!]!.children![descriptionId!]!.label);
-		if (otherAt && !isOther(out[out.length - 1])) out.push('Other');
-		return out;
-	}, [categoryId, typeId, descriptionId, otherAt, taxonomy]);
+		// Category label (fallback to initial label if taxonomy not ready)
+		if (categoryId) {
+			const catLabel = taxonomy[categoryId]?.label;
+			if (catLabel) out.push(catLabel);
+			else if (initial?.cat) out.push(initial.cat);
+		} else if (initial?.cat) {
+			out.push(initial.cat);
+		}
+
+		// Type label (skip if early-exit at category)
+		if (typeId && otherAt !== 'category') {
+			const typeLabel = categoryId ? taxonomy[categoryId]?.children?.[typeId]?.label : undefined;
+			if (typeLabel) out.push(typeLabel);
+			else if (initial?.type) out.push(initial.type);
+		}
+
+		// Description label (only when not early-exit at type/description)
+		if (descriptionId && !otherAt) {
+			const descLabel = (categoryId && typeId)
+				? taxonomy[categoryId]?.children?.[typeId]?.children?.[descriptionId]?.label
+				: undefined;
+			if (descLabel) out.push(descLabel);
+			else if (initial?.desc) out.push(initial.desc);
+		}
+
+		const filtered = out.filter(Boolean);
+		if (otherAt && !isOther(filtered[filtered.length - 1] || '')) filtered.push('Other');
+		return filtered;
+	}, [categoryId, typeId, descriptionId, otherAt, taxonomy, initial]);
 
 	React.useEffect(() => {
 		onChange({ categoryId, typeId, descriptionId, labels, isOther: Boolean(otherAt), otherAt });
