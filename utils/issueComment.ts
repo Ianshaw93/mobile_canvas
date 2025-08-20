@@ -7,7 +7,7 @@ export type IssueMeta = {
   desc?: string;
 };
 
-export const ISSUE_HEADER_REGEX = /^\[\[ISSUE:\s*([^]+?)\]\](?:\s*|\n)?(.*)$/s;
+export const ISSUE_HEADER_REGEX = /^\[\[ISSUE:\s*([^]+?)\]\](?:\s*|\n)?([\s\S]*)$/;
 
 export function slugify(input: string): string {
   return input

@@ -1,5 +1,5 @@
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
@@ -56,6 +56,32 @@ const CameraLogic= ({selectedPoint, planId}) => {
   console.log("imageArray@top: ", imageArray)
 
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Keep latest comment for debounced saves
+  const commentRef = useRef<string>('');
+  useEffect(() => { commentRef.current = comment; }, [comment]);
+
+  // Debounce timer for issue selection saves
+  const issueDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const saveIssueSelectionNow = useCallback(() => {
+    if (!issueSelection) return;
+    const labels = issueSelection.labels || [];
+    const [cat, type, desc] = labels;
+    if (cat || type || desc) {
+      const meta: IssueMeta = {
+        catId: cat ? slugify(cat) : undefined,
+        typeId: type ? slugify(type) : undefined,
+        descId: desc ? slugify(desc) : undefined,
+        cat,
+        type,
+        desc,
+      };
+      const header = buildIssueHeader(meta);
+      const composed = `${header}${commentRef.current?.trim() ? ' ' + commentRef.current.trim() : ''}`;
+      addCommentToPin(planId, selectedPoint.id, composed);
+    }
+  }, [issueSelection, addCommentToPin, planId, selectedPoint.id]);
 
   const platform = Capacitor.getPlatform();
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
@@ -329,9 +355,31 @@ const CameraLogic= ({selectedPoint, planId}) => {
       }
     }, [selectedPoint?.id]);
 
+    // Debounced save when issue selection changes (2s idle)
+    useEffect(() => {
+      if (!issueSelection) return;
+      if (issueDebounceRef.current) {
+        clearTimeout(issueDebounceRef.current);
+      }
+      issueDebounceRef.current = setTimeout(() => {
+        saveIssueSelectionNow();
+      }, 2000);
+      return () => {
+        if (issueDebounceRef.current) {
+          clearTimeout(issueDebounceRef.current);
+        }
+      };
+    }, [issueSelection, saveIssueSelectionNow]);
+
     // Task 1.2: Memory cleanup when popup closes
     useEffect(() => {
       return () => {
+        // Flush any pending debounced save on unmount
+        if (issueDebounceRef.current) {
+          clearTimeout(issueDebounceRef.current);
+          issueDebounceRef.current = null;
+          saveIssueSelectionNow();
+        }
         // Cleanup when component unmounts (popup closes)
         console.log('🧹 CameraLogic cleanup - clearing local state to free memory');
         setImageArray([]);
@@ -534,22 +582,6 @@ const CameraLogic= ({selectedPoint, planId}) => {
             <PinIssuePicker
               onChange={(sel) => {
                 setIssueSelection(sel);
-                // Persist header immediately so cascade remains even if textarea isn't blurred
-                const labels = sel.labels || [];
-                const [cat, type, desc] = labels;
-                if (cat || type || desc) {
-                  const meta: IssueMeta = {
-                    catId: cat ? slugify(cat) : undefined,
-                    typeId: type ? slugify(type) : undefined,
-                    descId: desc ? slugify(desc) : undefined,
-                    cat,
-                    type,
-                    desc,
-                  };
-                  const header = buildIssueHeader(meta);
-                  const composed = `${header}${comment?.trim() ? ' ' + comment.trim() : ''}`;
-                  addCommentToPin(planId, selectedPoint.id, composed);
-                }
               }}
               initial={initialIssueLabels || undefined}
             />
