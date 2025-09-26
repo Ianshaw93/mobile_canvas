@@ -143,9 +143,17 @@ function CanvasComponent({pdfId}) {
       let closestPoint: Point | null = null;
       let closestDistance: number | null = null;
 
+      // Conservative responsive selection radius:
+      // selectionRadius = clamp(18, 0.012 * min(canvasWidth, canvasHeight), 36)
+      const minCanvasDimension = Math.min(
+        canvasDimensions?.width || 0,
+        canvasDimensions?.height || 0
+      );
+      const scaledRadius = Math.max(18, Math.min(36, 0.012 * minCanvasDimension));
+
       points.forEach((currentP) => {
         const currentDistance = calcDistance(pointer, currentP);
-        if (currentDistance < 15 && (closestDistance === null || currentDistance < closestDistance)) {
+        if (currentDistance < scaledRadius && (closestDistance === null || currentDistance < closestDistance)) {
           closestDistance = currentDistance;
           closestPoint = currentP;
         }
@@ -153,7 +161,7 @@ function CanvasComponent({pdfId}) {
 
       return closestPoint;
     },
-    [points]
+    [points, canvasDimensions]
   );
 
 

@@ -1,0 +1,761 @@
+##main.py###
+
+import os
+import requests
+import json
+import uvicorn
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Request
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
+# from sqlalchemy.orm import sessionmaker, Session
+# from sqlalchemy import create_engine, Column, Integer, String, LargeBinary, text, JSON, DateTime
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import base64
+import logging
+from docx import Document
+from docx.shared import Inches
+from io import BytesIO
+from dotenv import load_dotenv
+from typing import Dict, Any, List
+# from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+import zipfile
+import shutil
+from pathlib import Path
+import csv
+from site_report import fillWordDoc
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+# DATABASE_URL = os.getenv("DATABASE_URL")
+# if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+#     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# engine = create_engine(DATABASE_URL)
+# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# # Dependency
+# def get_db():
+#     db = SessionLocal()
+#     try:
+#         yield db
+#     finally:
+#         db.close()
+# {If running locally: uvicorn main:app --host 0.0.0.0 --port 8080 --reload}
+app = FastAPI()
+
+# Add TrustedHostMiddleware to handle HTTPS properly
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=["web-production-44b8.up.railway.app", "*"]
+)
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+class ImageUpload(BaseModel):
+    image: str
+load_dotenv(".env")
+DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
+DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+ACCESS_TOKEN_FILE = "access_token.json"  # Local file for storing access token (for example purposes)
+
+# # print(DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, REDIRECT_URI)
+
+# Base = declarative_base()
+
+# # Define Project model
+# class Project(Base):
+#     __tablename__ = "projects"
+    
+#     id = Column(String, primary_key=True)
+#     name = Column(String, nullable=False)
+#     created_at = Column(DateTime, default=datetime.utcnow)
+#     data = Column(JSON)  # Store the entire project data as JSON
+
+class FileStructure(BaseModel):
+    pdfs: List[str]
+    images: List[str]
+    csvFile: str
+
+# @app.on_event("startup")
+# async def startup_event():
+#     logging.info("Application has started")
+#     # Create all tables
+#     Base.metadata.create_all(bind=engine)
+
+# @app.on_event("shutdown") 
+# async def shutdown_event():
+#     logging.info("Application is shutting down")
+# # get mobile app to call path
+# # then send all elements through api call
+# # later send images too
+# # perhaps will need to convert pin co-ordinates to image co-ordinates, currently screen co-ordinates
+# @app.post("/testPost")
+# async def root(body: dict):
+#     print(body)
+#     return {"message": "Hello World"}
+
+@app.get("/test")
+async def root():
+    # print(body)
+    return {"message": "Hello World"}
+
+
+
+# Function to convert Base64 back to PDF
+def base64_to_pdf(base64_string, output_pdf_path):
+    # If the Base64 string contains the data URI prefix, remove it
+    if base64_string.startswith("data:application/pdf;base64,"):
+        base64_string = base64_string.replace("data:application/pdf;base64,", "")
+    
+    # Decode the Base64 string back into binary data
+    pdf_data = base64.b64decode(base64_string)
+    
+    # Write the binary data to a new PDF file
+    with open(output_pdf_path, "wb") as pdf_file:
+        pdf_file.write(pdf_data)
+
+# TODO: send this to dropbox
+@app.get("/downloadProject")
+async def download_project():
+    file_name = 'Oil Pan Fire Appendix - Template.docx'
+    try:
+        return FileResponse(
+            path=file_name,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename=file_name
+        )
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Could not read file")
+
+
+@app.post("/uploadFormData")
+async def upload_form_data(
+    file: UploadFile = File(...), 
+    description: str = Form(...)
+):
+    try:
+        # Save the file locally or process it as needed
+        with open(file.filename, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # Return a response
+        print(f"{file.filename} uploaded successfully")
+        return JSONResponse(content={"message": "File uploaded successfully", "filename": file.filename, "description": description})
+    except Exception as e:
+        print(file.filename)
+        return JSONResponse(content={"message": str(e)}, status_code=500)
+
+
+
+@app.post("/uploadBase64Image")
+async def upload_base64_image(image_upload: ImageUpload):
+    try:
+        base64_string = image_upload.image
+        # print(base64_string)
+        
+        # Default file extension
+        file_extension = ".pdf"
+        
+        # Detect the type of file from the Base64 prefix and adjust filename
+        if base64_string.startswith("data:image/jpeg;base64,"):
+            base64_string = base64_string.replace("data:image/jpeg;base64,", "")
+            file_extension = ".jpg"
+        elif base64_string.startswith("data:image/png;base64,"):
+            base64_string = base64_string.replace("data:image/png;base64,", "")
+            file_extension = ".png"
+        elif base64_string.startswith("data:application/pdf;base64,"):
+            base64_string = base64_string.replace("data:application/pdf;base64,", "")
+            file_extension = ".pdf"
+        
+        # Decode the Base64 string back into binary data
+        file_data = base64.b64decode(base64_string)
+        
+        # Save the file based on the detected type
+        output_file_name = f"uploaded_image{file_extension}"
+        with open(output_file_name, "wb") as file:
+            file.write(file_data)
+        return {"message": f"File uploaded successfully as {output_file_name}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+''''DROPBOX API CALLS'''
+# Step 1: Endpoint to start the OAuth flow
+@app.get("/auth/dropbox")
+def auth_dropbox():
+    authorization_url = (
+        f"https://www.dropbox.com/oauth2/authorize?response_type=code&client_id={DROPBOX_CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+    )
+    return RedirectResponse(url=authorization_url)
+
+
+# Step 2: Endpoint to handle the callback and exchange code for access token
+@app.get("/auth/callback")
+def auth_callback(request: Request):
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Code not provided")
+
+    # Exchange code for access token
+    token_url = "https://api.dropboxapi.com/oauth2/token"
+    response = requests.post(
+        token_url,
+        data={
+            "code": code,
+            "grant_type": "authorization_code",
+            "client_id": DROPBOX_CLIENT_ID,
+            "client_secret": DROPBOX_CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
+        },
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to retrieve access token")
+
+    token_data = response.json()
+    access_token = token_data.get("access_token")
+
+    # Save the access token locally (for this example, use a file)
+    with open(ACCESS_TOKEN_FILE, "w") as token_file:
+        json.dump({"access_token": access_token}, token_file)
+        return HTMLResponse(f"""
+    <html>
+        <body>
+            <p>Authentication Successful!</p>
+            <p>Access Token: {access_token}</p>
+            <a href="myapp://auth-success?access_token={access_token}">Continue</a>
+        </body>
+    </html>
+    """)
+    # # You should save this access token securely (e.g., associated with the user in a database)
+    # return RedirectResponse(f"myapp://auth-success?access_token={access_token}")
+
+# Step 3: Endpoint to retrieve the access token
+@app.get("/auth/token")
+def get_access_token():
+    try:
+        with open(ACCESS_TOKEN_FILE, "r") as token_file:
+            token_data = json.load(token_file)
+            access_token = token_data.get("access_token")
+            if not access_token:
+                raise HTTPException(status_code=404, detail="Access token not found")
+            return {"access_token": access_token}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Access token not found")
+
+@app.get("/tables")
+async def get_tables():
+    try:
+        # Since we commented out the database code, return a mock response
+        return {"tables": ["No database connection available"]}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Pydantic model for project data
+class ProjectData(BaseModel):
+    # Define fields based on your project structure
+    # This is a flexible model that can accept any JSON structure
+    data: Dict[str, Any]
+
+@app.post("/api/projects")
+async def create_project(project_data: Dict[str, Any]):
+    try:
+        # Log the received data
+        print(f"Received project data: {project_data}")
+        
+        # Here you would typically:
+        # 1. Validate the data
+        # 2. Store it in your database
+        # 3. Return a success response
+        
+        # For now, let's just return the data as confirmation
+        return {
+            "status": "success",
+            "message": "Project received successfully",
+            "project_id": "temp_id_123",  # You would generate a real ID
+            "data": project_data
+        }
+    except Exception as e:
+        # Log the error
+        print(f"Error processing project data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process project: {str(e)}")
+
+@app.get("/api/projects/proj_1739444037585")
+async def get_project(project_id: str):
+    try:
+        # Implement the logic to retrieve the project data from the database
+        # This is a placeholder and should be replaced with actual implementation
+        project_data = {
+            "id": project_id,
+            "name": "Sample Project",
+            "createdAt": "2024-04-01T12:00:00",
+            "plans": [
+                {
+                    "id": "plan1",
+                    "name": "Plan 1",
+                    "pdf": "base64_encoded_pdf_1",
+                    "thumbnail": "base64_encoded_thumbnail_1"
+                },
+                {
+                    "id": "plan2",
+                    "name": "Plan 2",
+                    "pdf": "base64_encoded_pdf_2",
+                    "thumbnail": "base64_encoded_thumbnail_2"
+                }
+            ],
+            "thumbnail": "base64_encoded_thumbnail"
+        }
+        return project_data
+    except Exception as e:
+        return {"error": str(e)}
+
+def create_project_document(pdfs_dir: Path, images_dir: Path, csv_file: Path) -> BytesIO:
+    # Load the template document
+    doc = Document('Oil Pan Fire Appendix - Template.docx')
+    
+    # Create a context dictionary to map placeholder names to image paths
+    context = {
+        "image1": str(images_dir / "point_1743067844641_image_1.jpg")
+    }
+    
+    # Iterate through all paragraphs to find and replace image placeholders
+    for paragraph in doc.paragraphs:
+        if "{{image1}}" in paragraph.text:
+            # Clear the paragraph text
+            paragraph.text = ""
+            # Add the image
+            try:
+                run = paragraph.add_run()
+                run.add_picture(context["image1"], width=Inches(6))
+            except Exception as e:
+                paragraph.text = f"Error adding image: {str(e)}"
+    
+    # Add the rest of the content as before
+    doc.add_heading('Project Data', level=1)
+    if csv_file.exists():
+        with open(csv_file, 'r') as f:
+            csv_reader = csv.reader(f)
+            data = list(csv_reader)
+            if data:
+                table = doc.add_table(rows=len(data), cols=len(data[0]))
+                table.style = 'Table Grid'
+                for i, row in enumerate(data):
+                    for j, cell in enumerate(row):
+                        table.cell(i, j).text = cell
+    
+    # Add PDFs section
+    doc.add_heading('PDF Documents', level=1)
+    for pdf_path in pdfs_dir.glob('*.pdf'):
+        doc.add_paragraph(f'PDF Document: {pdf_path.name}')
+    
+    # Add Images section
+    doc.add_heading('Additional Images', level=1)
+    for image_path in images_dir.glob('*.jpg'):
+        # Skip the image we already inserted in the template
+        if image_path.name != "point_1743067844641_image_1.jpg":
+            doc.add_paragraph(f'Image: {image_path.name}')
+            try:
+                doc.add_picture(str(image_path), width=Inches(6))
+            except Exception as e:
+                doc.add_paragraph(f'Error adding image: {str(e)}')
+    
+    # Save to BytesIO
+    doc_buffer = BytesIO()
+    doc.save(doc_buffer)
+    doc_buffer.seek(0)
+    return doc_buffer
+
+@app.post("/uploadZip")
+async def upload_zip(
+    file: UploadFile = File(...),
+    fileStructure: str = Form(...)
+):
+    temp_dir = Path("temp_extract")
+    try:
+        # Parse the file structure JSON
+        file_structure = FileStructure.parse_raw(fileStructure)
+        
+        # Create temporary directory to extract zip
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Create directories for pdfs, images, and pin_previews if they don't exist
+        pdfs_dir = Path("pdfs")
+        images_dir = Path("images")
+        pin_previews_dir = Path("pin_previews")
+        
+        pdfs_dir.mkdir(exist_ok=True)
+        images_dir.mkdir(exist_ok=True)
+        pin_previews_dir.mkdir(exist_ok=True)
+        
+        # Save and extract zip file
+        zip_path = temp_dir / "upload.zip"
+        with open(zip_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # Extract zip contents
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Move files to their respective directories
+        # Handle PDFs
+        for pdf_file in file_structure.pdfs:
+            pdf_name = Path(pdf_file).name
+            source = temp_dir / "pdfs" / pdf_name
+            destination = pdfs_dir / pdf_name
+            if source.exists():
+                shutil.move(str(source), str(destination))
+        
+        # Handle images
+        for image_file in file_structure.images:
+            image_name = Path(image_file).name
+            source = temp_dir / "images" / image_name
+            destination = images_dir / image_name
+            if source.exists():
+                shutil.move(str(source), str(destination))
+        
+        # Handle pin_previews directory
+        pin_previews_source = temp_dir / "pin_previews"
+        if pin_previews_source.exists():
+            for preview_file in pin_previews_source.glob("*.jpg"):
+                destination = pin_previews_dir / preview_file.name
+                shutil.move(str(preview_file), str(destination))
+        
+        # Handle CSV file
+        csv_name = Path(file_structure.csvFile).name
+        source = temp_dir / csv_name
+        if source.exists():
+            shutil.move(str(source), csv_name)
+        
+        # Print the actual contents of directories for debugging
+        print(f"Files in pdfs_dir: {list(pdfs_dir.glob('*'))}")
+        print(f"Files in images_dir: {list(images_dir.glob('*'))}")
+        print(f"Files in pin_previews_dir: {list(pin_previews_dir.glob('*'))}")
+        
+        # Generate the Word document using the template
+        fillWordDoc(project_dir=Path("images").parent)
+        
+        # Return the generated document
+        return FileResponse(
+            "site_visit_report.docx",
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename='site_visit_report.docx'
+        )
+        
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"Error processing zip file: {str(e)}")
+        print(f"Traceback: {error_detail}")
+        
+        # Clean up temp directory if it exists
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        
+        return JSONResponse(
+            content={"error": f"Failed to process zip file: {str(e)}", "traceback": error_detail},
+            status_code=500
+        )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+
+
+###site_report.py###
+
+# {{plan_name}}
+import io
+from pathlib import Path
+from docxtpl import DocxTemplate, InlineImage
+from docx import Document
+from docx.shared import Pt, RGBColor, Inches
+import pandas as pd
+import fitz  # PyMuPDF
+from PIL import Image, ImageDraw
+import numpy as np
+import re
+from typing import Dict, Optional
+# from constants import font_name_light
+
+
+document_name = "Site Visit Report A3 - Template.docx"
+document_path = Path(__file__).parent /document_name
+doc = DocxTemplate(document_path)
+
+## step 1 template fill
+# TODO: bring comments from csv
+# TODO: go through all images in file
+# TODO: loop through all pins in plan
+# TODO: loop through all plans in project
+
+## step 2 receive zipped folder from frontend
+# TODO: unzip folder
+# TODO: read csv
+# TODO: read all images
+
+
+
+def _normalize_token(value) -> str:
+    """Normalize a filename-like token for robust comparisons.
+
+    - Casts to string
+    - Drops extension
+    - Lowercases
+    - Removes all non-alphanumeric characters
+    """
+    s = "" if value is None else str(value)
+    s = Path(s).stem
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+
+def _digits_only(value) -> str:
+    """Return only the digits from a value as a string."""
+    return re.sub(r'\D+', '', "" if value is None else str(value))
+
+
+# =========================
+# Pin comment header parsing
+# =========================
+HEADER_RE = re.compile(r'^\[\[ISSUE:(.*?)\]\]\s*(.*)$', re.DOTALL)
+PAIR_RE = re.compile(r'(\w+)\s*=\s*(?:"([^"]*)"|([^;]+))')
+
+
+def _prettify_identifier(value: str) -> str:
+    """Make id-like text readable: replace dashes/underscores, title-case."""
+    if not value:
+        return ""
+    return value.replace('-', ' ').replace('_', ' ').strip().title()
+
+
+def parse_issue_header(text: str) -> Dict[str, str]:
+    """Parse an optional ISSUE header from a pin comment.
+
+    Returns dict with keys:
+    - full_comment: original text
+    - comment: text without header (trimmed)
+    - header: human-friendly header string (e.g., "Construction, Fire Stopping, No stopping provided")
+    """
+    original = "" if text is None else str(text)
+    stripped = original.strip()
+
+    m = HEADER_RE.match(stripped)
+    if not m:
+        return {
+            'full_comment': original,
+            'comment': stripped,
+            'header': ''
+        }
+
+    payload, tail = m.group(1), m.group(2)
+
+    fields: Dict[str, str] = {}
+    for key, quoted, unquoted in PAIR_RE.findall(payload):
+        val = quoted if quoted != "" else unquoted
+        if val is not None:
+            val = val.strip()
+        fields[key] = val
+
+    cat = fields.get('cat') or _prettify_identifier(fields.get('catId', ''))
+    typ = fields.get('type') or _prettify_identifier(fields.get('typeId', ''))
+    desc = fields.get('desc') or _prettify_identifier(fields.get('descId', ''))
+
+    header_parts = [p for p in [cat, typ, desc] if p]
+    header_text = ", ".join(header_parts)
+
+    return {
+        'full_comment': original,
+        'comment': tail.strip(),
+        'header': header_text
+    }
+
+
+def find_best_pdf(plan_name, plan_file_name, available_pdfs: Dict[str, Path]) -> Optional[Path]:
+    """Resolve the most likely PDF for a plan given flexible naming.
+
+    Matching order:
+    1) Exact normalized match on Plan File Name (e.g., plan_001.pdf ↔ 001.pdf)
+    2) Numeric-only equality (e.g., 001 ↔ plan_001)
+    3) Normalized Plan Name containment (both directions)
+    4) Single-PDF fallback
+    """
+    if not available_pdfs:
+        return None
+
+    # Map normalized names to paths
+    norm_to_path: Dict[str, Path] = { _normalize_token(name): path for name, path in available_pdfs.items() }
+
+    # 1) Exact normalized match on Plan File Name
+    norm_plan_file = _normalize_token(plan_file_name)
+    if norm_plan_file and norm_plan_file in norm_to_path:
+        return norm_to_path[norm_plan_file]
+
+    # 2) Numeric-only equality
+    plan_digits = _digits_only(plan_name) or _digits_only(plan_file_name)
+    if plan_digits:
+        for name, path in available_pdfs.items():
+            if _digits_only(name) == plan_digits:
+                return path
+
+    # 3) Normalized Plan Name containment (both directions)
+    norm_name = _normalize_token(plan_name)
+    if norm_name:
+        for name, path in available_pdfs.items():
+            left = _normalize_token(name)
+            if norm_name in left or left in norm_name:
+                return path
+
+    # 4) Fallback if there's only one option
+    if len(available_pdfs) == 1:
+        return next(iter(available_pdfs.values()))
+
+    return None
+
+
+def fillWordDoc(project_dir: Path = None):
+    context = {}
+    
+    if project_dir:
+        try:
+            # Convert project_dir to Path if it's a string
+            if isinstance(project_dir, str):
+                project_dir = Path(project_dir)
+            
+            # Get the images directory, PDFs directory, and CSV file
+            images_dir = project_dir / "images"
+            pdfs_dir = project_dir / "pdfs"
+            pin_previews_dir = project_dir / "pin_previews"
+            csv_file = project_dir / "project_data.csv"
+            
+            # Read CSV file if it exists
+            if csv_file.exists():
+                # Force key columns to string to avoid numpy.int64 issues when users use numeric names
+                df = pd.read_csv(csv_file, dtype={
+                    'Plan Name': 'string',
+                    'Plan File Name': 'string'
+                })
+                
+                # Get all available PDFs
+                available_pdfs = {pdf.name: pdf for pdf in pdfs_dir.glob('*.pdf')}
+                print(f"Available PDFs: {available_pdfs}")
+                
+                # Group by Plan ID and Plan Name
+                plans = []
+                for plan_id, plan_group in df.groupby(['Plan ID', 'Plan Name'], sort=False):
+                    plan_data = {
+                        'plan_name': plan_group['Plan Name'].iloc[0],
+                        'plan_file': plan_group['Plan File Name'].iloc[0],
+                        'pins': [],
+                        'overall_comments': []
+                    }
+                    
+                    # Robustly resolve the correct PDF regardless of user-facing naming
+                    pdf_path = find_best_pdf(
+                        plan_name=plan_data['plan_name'],
+                        plan_file_name=plan_data['plan_file'],
+                        available_pdfs=available_pdfs
+                    )
+
+                    print(f"Plan: {plan_data['plan_name']}, Found PDF: {pdf_path}")
+
+                    # Attach the non-clean PNG version of this plan if available
+                    # Prefer a PNG that matches the chosen PDF filename (without extension), excluding *_clean.png
+                    chosen_pdf_name = Path(pdf_path).stem if pdf_path else Path(plan_data['plan_file']).stem
+                    candidate_png = pdfs_dir / f"{chosen_pdf_name}.png"
+                    candidate_clean_png = pdfs_dir / f"{chosen_pdf_name}_clean.png"
+                    if candidate_png.exists():
+                        plan_data['pins_image'] = InlineImage(doc, str(candidate_png), width=Inches(6))
+                    elif candidate_clean_png.exists():
+                        # Fallback, if only clean exists, still provide it
+                        plan_data['pins_image'] = InlineImage(doc, str(candidate_clean_png), width=Inches(6))
+
+                    # First, collect overall comments (rows without Point ID but with comments)
+                    overall_comments = plan_group[
+                        (plan_group['Point ID'].isna()) & 
+                        (plan_group['Point Comment'].notna())
+                    ]
+                    for _, row in overall_comments.iterrows():
+                        comment_data = {
+                            'comment': row['Point Comment'],
+                            'images': []
+                        }
+                        # Add images associated with this overall comment
+                        if pd.notna(row['Image File Name']):
+                            image_path = images_dir / row['Image File Name']
+                            if image_path.exists():
+                                comment_data['images'].append({
+                                    'image': InlineImage(doc, str(image_path), width=Inches(3)),
+                                    'comment': row['Image Comment'] if pd.notna(row['Image Comment']) else ''
+                                })
+                        plan_data['overall_comments'].append(comment_data)
+                    
+                    # Then handle points and their associated data
+                    for point_id, point_group in plan_group.groupby('Point ID'):
+                        if pd.notna(point_id):  # Only process if there's a point ID
+                            # Use Point ID as a timestamp in milliseconds for the pin date
+                            try:
+                                dt = pd.to_datetime(int(float(point_id)), unit='ms')
+                                formatted_date = dt.strftime('%d-%m-%Y %H:%M')
+                            except Exception:
+                                formatted_date = ''
+                            raw_comment = point_group['Point Comment'].iloc[0] if pd.notna(point_group['Point Comment'].iloc[0]) else ''
+                            parsed = parse_issue_header(raw_comment)
+                            point_data = {
+                                'point_id': point_id,
+                                'full_comment': parsed['full_comment'],
+                                'comment': parsed['comment'],
+                                'header': parsed['header'],
+                                'images': [],
+                                'date': formatted_date
+                            }
+                            
+                            # Look for pre-generated pin preview image
+                            preview_image_name = f"plan_{plan_id[0]}_point_{point_id}_preview.jpg"
+                            preview_image_path = pin_previews_dir / preview_image_name
+                            
+                            if preview_image_path.exists():
+                                # Use the pre-generated preview image
+                                point_data['preview'] = InlineImage(
+                                    doc,
+                                    str(preview_image_path),
+                                    width=Inches(3)
+                                )
+                            
+                            # Add images associated with this point
+                            for _, row in point_group.iterrows():
+                                if pd.notna(row['Image File Name']):
+                                    image_path = images_dir / row['Image File Name']
+                                    if image_path.exists():
+                                        point_data['images'].append({
+                                            'image': InlineImage(doc, str(image_path), width=Inches(3)),
+                                            'comment': row['Image Comment'] if pd.notna(row['Image Comment']) else ''
+                                        })
+                            
+                            plan_data['pins'].append(point_data)
+                    
+                    plans.append(plan_data)
+                
+                # Add to context
+                context['plans'] = plans
+                
+            else:
+                print(f"CSV file not found: {csv_file}")
+                
+        except Exception as e:
+            print(f"Error processing project data: {str(e)}")
+
+    doc.render(context)
+    doc.save("site_visit_report.docx")
+
+
+if __name__ == "__main__":
+    fillWordDoc(r"project_New project_1743176915816")
