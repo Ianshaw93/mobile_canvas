@@ -1,0 +1,5 @@
+ #Bash commands to stream android logcat to file
+ ##Console logs
+ adb -s R3CR301311Y logcat -v time Capacitor/Console:I *:S --pid=16501 > log_console.txt
+ ##App logs
+ adb -s R3CR301311Y logcat --pid=16501 -v time > log_app.txt

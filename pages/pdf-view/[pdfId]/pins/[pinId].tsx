@@ -10,6 +10,7 @@ const PinDetailPage = () => {
   const getPlan = useSiteStore((state) => state.getPlan);
   const deletePoint = useSiteStore((state) => state.deletePoint);
   const plan = getPlan(pdfId);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // ✅ This is the reference branch pattern - fresh data every render!
   const selectedPoint = plan?.points.find(point => point.id === pinId);
@@ -24,19 +25,31 @@ const PinDetailPage = () => {
     console.log('🔄 selectedPoint.comment (FRESH):', selectedPoint?.comment);
   }, [pdfId, pinId, plan, selectedPoint]);
 
+  // If the pin disappears (e.g., after deletion), ensure we leave this page
+  useEffect(() => {
+    if (!selectedPoint && pdfId) {
+      router.replace({ pathname: '/pdf-view', query: { pdfId } });
+    }
+  }, [selectedPoint, pdfId, router]);
+
   const handleBack = () => {
     router.back();
   };
 
   const handleDelete = () => {
+    if (isDeleting) return;
     if (window.confirm('Are you sure you want to delete this pin?')) {
-      deletePoint(pdfId, pinId);
-      router.back();
+      setIsDeleting(true);
+      // SPA navigation to PDF view like the popup flow to avoid reloading WebView
+      router.replace({ pathname: '/pdf-view', query: { pdfId } });
+      Promise.resolve(deletePoint(pdfId, pinId)).catch((err) => {
+        console.error('❌ Error deleting point:', err);
+      });
     }
   };
 
-  if (!selectedPoint) {
-    return <div>Pin not found</div>;
+  if (!selectedPoint || isDeleting) {
+    return null;
   }
 
   return (
@@ -48,6 +61,7 @@ const PinDetailPage = () => {
           <div className="space-x-2">
             <button
               onClick={handleDelete}
+              disabled={isDeleting}
               className="text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2"
             >
               Delete Pin
