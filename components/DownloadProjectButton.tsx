@@ -210,6 +210,7 @@ const generatePlanOverviewImage = async (pdfjs, plan, points, includePins = true
 const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<string>('');
+  const [percent, setPercent] = useState<number>(0);
   const selectedProject = useSiteStore((state) => 
     state.projects.find(p => p.id === projectId)
   );
@@ -415,6 +416,15 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
     if (!selectedProject || !pdfjs) return;
     setIsGenerating(true);
     setProgress('Loading project data...');
+    setPercent(0);
+    // Yield to the browser so the button + progress bar can render on first click
+    await new Promise<void>((resolve) => {
+      if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+        requestAnimationFrame(() => resolve());
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
 
     try {
       console.log('📦 Starting project export for:', selectedProject.name);
@@ -423,6 +433,14 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       setProgress('Loading images...');
       const loadExportData = useSiteStore.getState().loadExportData;
       const exportData = await loadExportData(selectedProject.id);
+      
+      // Progress weighting across stages
+      const LOAD_WEIGHT = 0.1;      // 10%
+      const ASSET_WEIGHT = 0.7;     // 70%
+      const COMPRESS_WEIGHT = 0.2;  // 20%
+      
+      // Initialize progress after data load
+      setPercent(Math.round(LOAD_WEIGHT * 100));
       
       console.log('📦 Export data loaded, creating zip file...');
       
@@ -436,6 +454,25 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       // Generate CSV with the loaded data
       const csvData = generateCSVFromExportData(exportData);
       zip.file("project_data.csv", csvData);
+      
+      // Compute units for asset generation phase
+      const planCount = exportData.plans.length;
+      const pointCount = exportData.plans.reduce((sum: number, p: any) => sum + p.points.length, 0);
+      const imageCount = exportData.plans.reduce(
+        (sum: number, p: any) => sum + p.points.reduce((s: number, pt: any) => s + pt.images.length, 0),
+        0
+      );
+      const overviewCount = planCount * 2; // with pins + clean
+      const pdfCount = planCount;          // each plan PDF
+      const assetUnits = Math.max(1, pdfCount + overviewCount + pointCount + imageCount);
+      let assetCompleted = 0;
+      const updateAssetProgress = (label?: string) => {
+        const base = LOAD_WEIGHT * 100;
+        const assetPortion = (assetCompleted / assetUnits) * (ASSET_WEIGHT * 100);
+        const next = Math.min(99, Math.floor(base + assetPortion));
+        setPercent(next);
+        if (label) setProgress(label);
+      };
 
       // Add PDFs
       for (const planData of exportData.plans) {
@@ -444,6 +481,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           const pdfData = plan.url.split(',')[1]; // Remove data URL prefix
           const fileName = `${plan.name || plan.id}.pdf`;
           pdfsFolder?.file(fileName, pdfData, { base64: true });
+          assetCompleted += 1; // PDF added
+          updateAssetProgress(`Added PDF ${fileName}`);
         }
 
         // Generate full-plan overview images (with pins and clean)
@@ -455,6 +494,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           // Store alongside the existing plan export assets
           pdfsFolder?.file(`${baseName}.png`, withPinsPng as string, { base64: true });
           pdfsFolder?.file(`${baseName}_clean.png`, cleanPng as string, { base64: true });
+          assetCompleted += 2; // two overviews
+          updateAssetProgress(`Generated overviews for ${baseName}`);
         } catch (error) {
           console.error(`Error generating overview images for plan ${plan.id}:`, error);
         }
@@ -470,6 +511,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
             const previewJpg = await generatePinPreviewImage(pdfjs, plan, point, pointIndex);
             const previewFileName = `plan_${plan.id}_point_${point.id}_preview.jpg`;
             previewsFolder?.file(previewFileName, previewJpg as string, { base64: true });
+            assetCompleted += 1; // preview
+            updateAssetProgress(`Generated preview for pin ${point.id}`);
           } catch (error) {
             console.error(`Error generating preview for point ${point.id}:`, error);
           }
@@ -481,6 +524,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
               const fileName = `point_${point.id}_image_${i + 1}.jpg`;
               imagesFolder?.file(fileName, image.data, { base64: true });
               console.log(`✅ Added image ${fileName} to zip`);
+              assetCompleted += 1; // image
+              updateAssetProgress(`Added image ${fileName}`);
             } else {
               console.warn(`⚠️ Skipping image ${image.key} - no data available`);
             }
@@ -488,9 +533,22 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         }
       }
 
-      setProgress('Generating previews...');
+      setProgress('Compressing files...');
       console.log('📦 Generating zip file...');
-      const zipContent = await zip.generateAsync({ type: "blob" });
+      // Ensure asset phase ends at LOAD+ASSET weights before compression
+      updateAssetProgress('Compressing files...');
+      const zipContent = await zip.generateAsync(
+        { type: "blob" },
+        (metadata) => {
+          // metadata.percent is 0..100 for compression only
+          const base = (LOAD_WEIGHT + ASSET_WEIGHT) * 100;
+          const total = Math.min(100, Math.floor(base + (COMPRESS_WEIGHT * metadata.percent)));
+          setPercent(total);
+          if (metadata.currentFile) {
+            setProgress(`Compressing ${metadata.currentFile} (${Math.floor(metadata.percent)}%)`);
+          }
+        }
+      );
 
       if (Capacitor.isNativePlatform()) {
         // For mobile devices: Save to Downloads directory
@@ -542,6 +600,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       }
       
       setProgress('Export complete!');
+      setPercent(100);
       console.log('📦 Project export completed successfully');
     } catch (error) {
       console.error('Error generating zip:', error);
@@ -554,13 +613,23 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   };
 
   return (
-    <button
-      onClick={handleDownload}
-      disabled={isGenerating}
-      className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-400"
-    >
-      {isGenerating ? `Exporting... ${progress}` : 'Export Project'}
-    </button>
+    <div>
+      <button
+        onClick={handleDownload}
+        disabled={isGenerating}
+        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-400 w-full"
+      >
+        {isGenerating ? `Exporting... ${progress}` : 'Export Project'}
+      </button>
+      {isGenerating && (
+        <div className="mt-2 h-2 bg-gray-200 rounded-full w-full">
+          <div
+            className="h-2 bg-green-500 rounded-full transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 };
 
