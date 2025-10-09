@@ -434,6 +434,27 @@ const CameraLogic= ({selectedPoint, planId}) => {
       setRefreshKey(prev => prev + 1);
     };
 
+    const pickFromGallery = async () => {
+      try {
+        console.log('🖼️ Picking image from gallery for selectedPoint:', selectedPoint.id);
+        const image = await Camera.getPhoto({
+          quality: 80,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Photos,
+          correctOrientation: true,
+          width: 2048,
+          height: 2048
+        });
+
+        if (!image) return;
+        await handlePhotoTaken(image);
+      } catch (error) {
+        console.error('Error picking image from gallery:', error);
+        alert('Failed to pick image. Please try again.');
+      }
+    };
+
     // Optimize image function with better memory management
     const optimizeImage = async (base64: string, options: { maxWidth: number; maxHeight: number; quality: number }) => {
       return new Promise<string>((resolve) => {
@@ -499,6 +520,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
       <div>
         <button onClick={takePicture} className="mb-4 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2">
           Take Picture
+        </button>
+        <button onClick={pickFromGallery} className="mb-4 ml-2 text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2">
+          Add from Gallery
         </button>
         <div>
           {imageArray.map((img, index) => {
