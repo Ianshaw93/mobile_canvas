@@ -46,7 +46,6 @@ const CameraLogic= ({selectedPoint, planId}) => {
   const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
   const deleteImageFromPin = useSiteStore((state) => state.deleteImageFromPin);
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
-  const updateProjectImages = useSiteStore((state) => state.updateProjectImages);
   const [imageComments, setImageComments] = useState<{ [key: string]: string }>({});
   const [comment, setComment] = useState<string>('');
   const [issueSelection, setIssueSelection] = useState<{ labels: string[]; isOther?: boolean; otherAt?: 'category' | 'type' | 'description' } | null>(null);
@@ -425,10 +424,6 @@ const CameraLogic= ({selectedPoint, planId}) => {
       // **CRITICAL FIX: Add image to store to ensure persistence**
       console.log('📸 Adding image to store via handlePhotoTaken:', { planId, selectedPointId: selectedPoint.id, transformedImage });
       await addImageToPin(planId, selectedPoint.id, transformedImage);
-      
-      // Update state via Zustand
-      // @ts-ignore
-      updateProjectImages(selectedProjectId, base64Data);
       
       // Force a re-render
       setRefreshKey(prev => prev + 1);
