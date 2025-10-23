@@ -33,7 +33,7 @@ const PinDetailPage = () => {
   }, [selectedPoint, pdfId, router]);
 
   const handleBack = () => {
-    router.back();
+    router.replace(`/pdf-view/${pdfId}/pins`);
   };
 
   const handleDelete = () => {

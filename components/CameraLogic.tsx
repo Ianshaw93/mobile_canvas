@@ -1,5 +1,5 @@
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
@@ -55,6 +55,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
   console.log("imageArray@top: ", imageArray)
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const isFetchingRef = useRef(false);
+  const lastFetchAtRef = useRef<number>(0);
+  const reloadSuppressUntilRef = useRef<number>(0);
 
   const platform = Capacitor.getPlatform();
   console.log("Platform: ", platform);  // 'ios', 'android', or 'web'
@@ -311,6 +314,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           setImageArray(newImageArray);
 
           // Let the store handle file deletion and state updates
+          reloadSuppressUntilRef.current = Date.now() + 1000; // pause reloads briefly after delete
           await deleteImageFromPin(planId, selectedPoint.id, imageKey);
 
         } catch (error) {
@@ -320,12 +324,20 @@ const CameraLogic= ({selectedPoint, planId}) => {
     };
 
     useEffect(() => {
-      console.log('🔍 CameraLogic useEffect triggered - selectedPoint:', selectedPoint);
-      console.log('🔍 CameraLogic switching to SQL-on-demand pattern');
-      
-      if (selectedPoint?.id) {
-        loadFreshPinDataFromSQL(selectedPoint.id);
-      }
+      const now = Date.now();
+      if (!selectedPoint?.id) return;
+      if (reloadSuppressUntilRef.current && now < reloadSuppressUntilRef.current) return;
+      if (isFetchingRef.current) return;
+      if (now - lastFetchAtRef.current < 400) return;
+
+      isFetchingRef.current = true;
+      lastFetchAtRef.current = now;
+      loadFreshPinDataFromSQL(selectedPoint.id)
+        .catch((err) => console.error('❌ Failed to load fresh pin data:', err))
+        .finally(() => {
+          // small delay before allowing next fetch to dampen rapid re-renders
+          setTimeout(() => { isFetchingRef.current = false; }, 200);
+        });
     }, [selectedPoint?.id]);
 
     // Task 1.2: Memory cleanup when popup closes
@@ -513,11 +525,49 @@ const CameraLogic= ({selectedPoint, planId}) => {
 
     return (
       <div>
-        <button onClick={takePicture} className="mb-4 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2">
-          Take Picture
+        <button
+          onClick={takePicture}
+          className="mb-4 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2"
+          aria-label="Take picture"
+          title="Take picture"
+        >
+          {/* Camera icon */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <path d="M3 8h3l2-3h8l2 3h3a2 2 0 012 2v8a2 2 0 01-2 2H3a2 2 0 01-2-2V10a2 2 0 012-2z" />
+            <circle cx="12" cy="14" r="3" />
+          </svg>
+          <span className="sr-only">Take picture</span>
         </button>
-        <button onClick={pickFromGallery} className="mb-4 ml-2 text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2">
-          Add from Gallery
+        <button
+          onClick={pickFromGallery}
+          className="mb-4 ml-2 text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2"
+          aria-label="Add from device"
+          title="Add from device"
+        >
+          {/* File icon */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <path d="M14 2H7a2 2 0 00-2 2v16a2 2 0 002 2h10a2 2 0 002-2V7l-5-5z" />
+            <polyline points="14 2 14 7 19 7" />
+          </svg>
+          <span className="sr-only">Add from device</span>
         </button>
         <div>
           {imageArray.map((img, index) => {

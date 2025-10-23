@@ -9,6 +9,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import ReportButton from './ReportButton';
 import { sendProjectToBackend } from './ApiCalls';
 import DownloadProjectButton from './DownloadProjectButton';
+import SupportBundleButton from './SupportBundleButton';
 
 type Dimensions = {
   width: number;
@@ -296,11 +297,12 @@ const PdfPicker = () => {
 
       {/* Add a visual cue when project is selected */}
       {selectedProjectId && (
-        <div className="mt-2 mb-4">
+        <div className="mt-2 mb-4 space-y-2">
           <div className="text-green-600 animate-pulse mb-2">
             ↓ Add PDFs to your project here ↓
           </div>
           <DownloadProjectButton projectId={selectedProjectId} />
+          <SupportBundleButton />
         </div>
       )}
 
