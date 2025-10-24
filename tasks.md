@@ -127,6 +127,62 @@ The app now has a complete SQL-on-demand architecture that solves both memory cr
   - Profile database queries if performance issues arise
   - Add indexes if needed
 
+---
+
+# Large Export Stability Plan (High-Level Tasks)
+
+Goal: Eliminate WebView OOM during project export while preserving current UX. Start with JS-only batching/streaming, add native zip as a fallback.
+
+## Export Tasks (Planned)
+
+- [ ] E1: Implement JSZip batching + streaming to disk (keep JSZip)
+  - Build an async asset iterator (plans → points → images) that yields one asset at a time (no preloading).
+  - Add files to JSZip using Blob/Uint8Array (avoid base64 strings).
+  - Use canvas.toBlob for previews/overviews (no toDataURL), write immediately, drop refs.
+  - Stream the final zip using `generateInternalStream({ type: 'base64', streamFiles: true })` and append chunks to Downloads (minimize peak memory).
+  - Yield between items (requestAnimationFrame) and null large locals to help GC.
+  - Add hard caps: if file count/estimated size exceeds thresholds, split into multiple zips (part1, part2, …).
+
+- [ ] E2: Add “Light export” mode as default
+  - Include CSV, PDFs, raw images.
+  - Skip plan overviews and pin previews by default; expose a toggle to enable.
+  - If enabled, render at reduced scale and process strictly serially.
+
+- [ ] E3: Native zip fallback (if JS streaming is still tight)
+  - Write assets to a temp app folder, then zip natively (Capacitor/Cordova zip plugin) to Downloads.
+  - Cleanup temp folder on success/failure.
+
+- [ ] E4: Temp working directory management
+  - Create per-export temp directory, clear on start, robust cleanup on cancel/error.
+
+- [ ] E5: Progress, cancel, and user prompts
+  - Show item counts, current stage (assets vs compression), percent from streaming callback.
+  - Add Cancel to abort and cleanup temp files.
+  - Prompt to split when exceeding thresholds (configurable batch size: e.g., 200–500 images per part).
+
+- [ ] E6: Telemetry + diagnostics (dev-only)
+  - Log asset counts, batch boundaries, stream progress, and timings to console/logcat.
+  - Record WebView memory hints where possible (non-crashing breadcrumbs).
+
+- [ ] E7: QA matrix and performance tests
+  - Devices: low-RAM vs high-RAM (4–6 GB vs 8–12 GB).
+  - Datasets: 50, 500, 5k images; with/without previews.
+  - Verify: zip integrity, CSV correctness, paths, and image counts.
+
+## Acceptance Criteria
+
+- Large projects export without OOM on mid-range devices.
+- Peak memory is bounded (no all-at-once base64 loads, no giant final Blob in JS).
+- Users can choose Light (default) vs Full export; exports are resumable/cancellable.
+- If thresholds exceeded, exports split into multiple zips with clear naming.
+
+## Impacted Files (planned changes)
+
+- `components/DownloadProjectButton.tsx` – export modes, batching/streaming logic, progress/cancel UI.
+- `store/useSiteStore.ts` – expose export data via async iterator (on-demand loading).
+- `hooks/usePDF.ts` (if needed) – enable toBlob rendering helpers.
+- `services/exportNative.ts` (new, optional) – native zip fallback implementation.
+
 ## Implementation Strategy
 
 **Phase 1 (Critical)**: Core SQL-on-demand lifecycle ✅ COMPLETE

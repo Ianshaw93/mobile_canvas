@@ -104,9 +104,14 @@ const generatePinPreviewImage = async (pdfjs, plan, point, pointIndex, size = 30
         size/2 - pinHeight * 13/20
       );
       
-      // Convert to JPG and resolve
-      const jpgData = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
-      resolve(jpgData);
+      // Convert to JPG Blob and resolve
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to create JPEG blob'));
+        }
+      }, 'image/jpeg', 0.9);
       
     } catch (error) {
       console.error('Error generating pin preview:', error);
@@ -197,9 +202,14 @@ const generatePlanOverviewImage = async (pdfjs, plan, points, includePins = true
         });
       }
 
-      // Export PNG (crisper labels)
-      const pngData = canvas.toDataURL('image/png').split(',')[1];
-      resolve(pngData);
+      // Export PNG Blob (crisper labels)
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to create PNG blob'));
+        }
+      }, 'image/png');
     } catch (error) {
       console.error('Error generating plan overview image:', error);
       reject(error);
@@ -211,6 +221,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<string>('');
   const [percent, setPercent] = useState<number>(0);
+  const [cancelRequested, setCancelRequested] = useState<boolean>(false);
   const selectedProject = useSiteStore((state) => 
     state.projects.find(p => p.id === projectId)
   );
@@ -417,6 +428,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
     setIsGenerating(true);
     setProgress('Loading project data...');
     setPercent(0);
+    setCancelRequested(false);
     // Yield to the browser so the button + progress bar can render on first click
     await new Promise<void>((resolve) => {
       if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
@@ -443,17 +455,120 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       setPercent(Math.round(LOAD_WEIGHT * 100));
       
       console.log('📦 Export data loaded, creating zip file...');
-      
-      const zip = new JSZip();
-      
-      // Create folders in the zip
-      const pdfsFolder = zip.folder("pdfs");
-      const imagesFolder = zip.folder("images");
-      const previewsFolder = zip.folder("pin_previews");
-      
-      // Generate CSV with the loaded data
-      const csvData = generateCSVFromExportData(exportData);
-      zip.file("project_data.csv", csvData);
+
+      // Batching configuration
+      const MAX_FILES_PER_PART = 500; // tunable cap per zip part
+      let filesAddedThisPart = 0;
+      let partIndex = 1;
+
+      // Helper to create a new zip part with folders and CSV
+      const createNewZipPart = () => {
+        const newZip = new JSZip();
+        const pdfs = newZip.folder("pdfs");
+        const images = newZip.folder("images");
+        const previews = newZip.folder("pin_previews");
+        const csvDataLocal = generateCSVFromExportData(exportData);
+        newZip.file("project_data.csv", csvDataLocal);
+        return { newZip, pdfs, images, previews };
+      };
+
+      // Helper to save a zip part to Downloads/web
+      const saveZipPart = async (zipToSave: JSZip, idx: number) => {
+        setProgress(`Compressing part ${idx}...`);
+        console.log('📦 Generating zip file part', idx);
+        const partSuffix = `_part_${idx}`;
+        const fileName = `project_${selectedProject.name}${idx > 1 ? partSuffix : ''}_${Date.now()}.zip`;
+        let lastPercent = 0;
+
+        if (Capacitor.isNativePlatform()) {
+          // Stream out using generateInternalStream and appendFile
+          const path = `Download/${fileName}`;
+          // Start with empty file (overwrite if exists)
+          await Filesystem.writeFile({
+            path,
+            data: '',
+            directory: Directory.ExternalStorage,
+            recursive: true
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            try {
+              // Helper: convert Uint8Array to base64 efficiently in chunks
+              const uint8ToBase64 = (bytes: Uint8Array): string => {
+                let binary = '';
+                const chunkSize = 0x8000; // 32KB chunks to avoid call stack limits
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  const sub = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode.apply(null, Array.from(sub));
+                }
+                // @ts-ignore btoa available in browser/webview
+                return btoa(binary);
+              };
+
+              const stream = zipToSave.generateInternalStream({ type: 'uint8array', streamFiles: true });
+
+              stream.on('data', async (chunk: any) => {
+                // Backpressure: ensure sequential writes
+                // @ts-ignore pause exists on JSZip stream
+                if (typeof stream.pause === 'function') stream.pause();
+                if (cancelRequested) {
+                  try { await Filesystem.deleteFile({ directory: Directory.ExternalStorage, path }); } catch {}
+                  reject(new Error('Export cancelled'));
+                  return;
+                }
+                try {
+                  const base64Chunk = uint8ToBase64(chunk as Uint8Array);
+                  await Filesystem.appendFile({ path, data: base64Chunk, directory: Directory.ExternalStorage });
+                } catch (e) {
+                  reject(e);
+                  return;
+                } finally {
+                  // @ts-ignore resume exists on JSZip stream
+                  if (typeof stream.resume === 'function') stream.resume();
+                }
+              });
+
+              stream.on('end', () => {
+                resolve();
+              });
+
+              stream.on('error', (e: any) => {
+                reject(e);
+              });
+
+              // Update percent periodically based on stream progress metadata (not directly available per chunk)
+              // Fallback to keeping existing percent logic; no-op here.
+              stream.resume();
+            } catch (e) {
+              reject(e as any);
+            }
+          });
+        } else {
+          // Web fallback: use blob as before
+          const zipContent = await zipToSave.generateAsync(
+            { type: 'blob' },
+            (metadata) => {
+              const base = (LOAD_WEIGHT + ASSET_WEIGHT) * 100;
+              const total = Math.min(100, Math.floor(base + (COMPRESS_WEIGHT * metadata.percent)));
+              if (total > lastPercent) setPercent(total);
+              if (metadata.currentFile) {
+                setProgress(`Compressing part ${idx}: ${metadata.currentFile} (${Math.floor(metadata.percent)}%)`);
+              }
+            }
+          );
+          const url = URL.createObjectURL(zipContent);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+      };
+
+      // Initialize first part
+      let { newZip: zip, pdfs: pdfsFolder, images: imagesFolder, previews: previewsFolder } = createNewZipPart();
       
       // Compute units for asset generation phase
       const planCount = exportData.plans.length;
@@ -474,6 +589,20 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         if (label) setProgress(label);
       };
 
+      const checkRotatePart = async () => {
+        if (filesAddedThisPart >= MAX_FILES_PER_PART) {
+          await saveZipPart(zip, partIndex);
+          partIndex += 1;
+          filesAddedThisPart = 0;
+          const created = createNewZipPart();
+          zip = created.newZip;
+          pdfsFolder = created.pdfs;
+          imagesFolder = created.images;
+          previewsFolder = created.previews;
+          setProgress(`Starting part ${partIndex}...`);
+        }
+      };
+
       // Add PDFs
       for (const planData of exportData.plans) {
         const plan = planData.plan;
@@ -483,19 +612,23 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           pdfsFolder?.file(fileName, pdfData, { base64: true });
           assetCompleted += 1; // PDF added
           updateAssetProgress(`Added PDF ${fileName}`);
+          filesAddedThisPart += 1;
+          await checkRotatePart();
         }
 
         // Generate full-plan overview images (with pins and clean)
         try {
           const exportScale = plan?.dimensions?.displayScale || 1.5; // match viewer scale by default
           const baseName = `${plan.name || plan.id}`;
-          const withPinsPng = await generatePlanOverviewImage(pdfjs, plan, planData.points, true, exportScale);
-          const cleanPng = await generatePlanOverviewImage(pdfjs, plan, planData.points, false, exportScale);
-          // Store alongside the existing plan export assets
-          pdfsFolder?.file(`${baseName}.png`, withPinsPng as string, { base64: true });
-          pdfsFolder?.file(`${baseName}_clean.png`, cleanPng as string, { base64: true });
+          const withPinsBlob = await generatePlanOverviewImage(pdfjs, plan, planData.points, true, exportScale);
+          const cleanBlob = await generatePlanOverviewImage(pdfjs, plan, planData.points, false, exportScale);
+          // Store alongside the existing plan export assets as Blobs
+          pdfsFolder?.file(`${baseName}.png`, withPinsBlob as Blob);
+          pdfsFolder?.file(`${baseName}_clean.png`, cleanBlob as Blob);
           assetCompleted += 2; // two overviews
           updateAssetProgress(`Generated overviews for ${baseName}`);
+          filesAddedThisPart += 2;
+          await checkRotatePart();
         } catch (error) {
           console.error(`Error generating overview images for plan ${plan.id}:`, error);
         }
@@ -508,11 +641,13 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           try {
             console.log(`Generating preview for point ${point.id} in plan ${plan.id}`);
             const pointIndex = planData.points.findIndex(p => p.point.id === point.id);
-            const previewJpg = await generatePinPreviewImage(pdfjs, plan, point, pointIndex);
+            const previewBlob = await generatePinPreviewImage(pdfjs, plan, point, pointIndex);
             const previewFileName = `plan_${plan.id}_point_${point.id}_preview.jpg`;
-            previewsFolder?.file(previewFileName, previewJpg as string, { base64: true });
+            previewsFolder?.file(previewFileName, previewBlob as Blob);
             assetCompleted += 1; // preview
             updateAssetProgress(`Generated preview for pin ${point.id}`);
+            filesAddedThisPart += 1;
+            await checkRotatePart();
           } catch (error) {
             console.error(`Error generating preview for point ${point.id}:`, error);
           }
@@ -526,6 +661,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
               console.log(`✅ Added image ${fileName} to zip`);
               assetCompleted += 1; // image
               updateAssetProgress(`Added image ${fileName}`);
+              filesAddedThisPart += 1;
+              await checkRotatePart();
             } else {
               console.warn(`⚠️ Skipping image ${image.key} - no data available`);
             }
@@ -533,70 +670,9 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         }
       }
 
-      setProgress('Compressing files...');
-      console.log('📦 Generating zip file...');
-      // Ensure asset phase ends at LOAD+ASSET weights before compression
-      updateAssetProgress('Compressing files...');
-      const zipContent = await zip.generateAsync(
-        { type: "blob" },
-        (metadata) => {
-          // metadata.percent is 0..100 for compression only
-          const base = (LOAD_WEIGHT + ASSET_WEIGHT) * 100;
-          const total = Math.min(100, Math.floor(base + (COMPRESS_WEIGHT * metadata.percent)));
-          setPercent(total);
-          if (metadata.currentFile) {
-            setProgress(`Compressing ${metadata.currentFile} (${Math.floor(metadata.percent)}%)`);
-          }
-        }
-      );
-
-      if (Capacitor.isNativePlatform()) {
-        // For mobile devices: Save to Downloads directory
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64Data = reader.result as string;
-          const fileName = `project_${selectedProject.name}_${Date.now()}.zip`;
-          
-          try {
-            // Save to Downloads directory
-            await Filesystem.writeFile({
-              path: `Download/${fileName}`,
-              data: base64Data.split(',')[1],
-              directory: Directory.ExternalStorage,
-              recursive: true
-            });
-
-            // Get the file URI
-            const fileUri = await Filesystem.getUri({
-              directory: Directory.ExternalStorage,
-              path: `Download/${fileName}`
-            });
-
-            // Share the file
-            await Share.share({
-              title: 'Project Export',
-              text: 'Project Export Data',
-              url: fileUri.uri,
-              dialogTitle: 'Export Project Data'
-            });
-
-            alert('Project exported successfully to Downloads folder');
-          } catch (error) {
-            console.error('Error saving or sharing file:', error);
-            alert('Failed to save project export. Please check app permissions.');
-          }
-        };
-        reader.readAsDataURL(zipContent);
-      } else {
-        // For web: Direct download
-        const url = URL.createObjectURL(zipContent);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `project_${selectedProject.name}_${Date.now()}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      // Finalize last part if any files added
+      if (filesAddedThisPart > 0) {
+        await saveZipPart(zip, partIndex);
       }
       
       setProgress('Export complete!');
@@ -604,8 +680,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       console.log('📦 Project export completed successfully');
     } catch (error) {
       console.error('Error generating zip:', error);
-      setProgress('Export failed');
-      alert('Failed to generate project export. Please try again.');
+      setProgress(cancelRequested ? 'Export cancelled' : 'Export failed');
+      if (!cancelRequested) alert('Failed to generate project export. Please try again.');
     } finally {
       setIsGenerating(false);
       setProgress('');
@@ -621,6 +697,22 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       >
         {isGenerating ? `Exporting... ${progress}` : 'Export Project'}
       </button>
+      {isGenerating && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-2 bg-gray-200 rounded-full w-full">
+            <div
+              className="h-2 bg-green-500 rounded-full transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <button
+            onClick={() => setCancelRequested(true)}
+            className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {isGenerating && (
         <div className="mt-2 h-2 bg-gray-200 rounded-full w-full">
           <div
