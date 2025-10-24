@@ -15,9 +15,9 @@ const ImportProjectButton: React.FC<ImportProjectButtonProps> = ({ projectId }) 
     try {
       setIsImporting(true);
       const { files } = await FilePicker.pickFiles({
-        types: ['application/zip', '.zip'],
-        multiple: false,
-        readData: true
+        types: ['application/zip', '.zip'], 
+        limit: 1, 
+        readData: true 
       });
       if (!files?.length || !files[0].data) {
         setIsImporting(false);
