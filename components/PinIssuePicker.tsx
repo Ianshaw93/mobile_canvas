@@ -198,9 +198,13 @@ export function PinIssuePicker({
 		return filtered;
 	}, [categoryId, typeId, descriptionId, otherAt, taxonomy, initial]);
 
+	// Avoid infinite re-render loops: don't depend on onChange identity.
+	// Keep latest handler in a ref and invoke it when selection-derived values change.
+	const onChangeRef = React.useRef(onChange);
+	React.useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 	React.useEffect(() => {
-		onChange({ categoryId, typeId, descriptionId, labels, isOther: Boolean(otherAt), otherAt });
-	}, [categoryId, typeId, descriptionId, labels, otherAt, onChange]);
+		onChangeRef.current({ categoryId, typeId, descriptionId, labels, isOther: Boolean(otherAt), otherAt });
+	}, [categoryId, typeId, descriptionId, labels, otherAt]);
 
 	return (
 		<div>

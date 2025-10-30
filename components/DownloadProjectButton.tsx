@@ -457,7 +457,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       console.log('📦 Export data loaded, creating zip file...');
 
       // Batching configuration
-      const MAX_FILES_PER_PART = 500; // tunable cap per zip part
+      const MAX_FILES_PER_PART = 30; // tunable cap per zip part
       let filesAddedThisPart = 0;
       let partIndex = 1;
 
