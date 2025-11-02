@@ -4,6 +4,16 @@ const config: CapacitorConfig = {
   appId: 'com.example.app',
   appName: 'mobile_canvas',
   webDir: 'out',
+  plugins: {
+    CapacitorSQLite: {
+      androidIsEncryption: false,
+      androidBiometric: {
+        biometricAuth: false,
+        biometricTitle: 'Authentication',
+        biometricSubTitle: 'Authenticate to open database'
+      }
+    }
+  },
   // server: {
   //   androidScheme: 'http',
   //   iosScheme: 'myapp',
