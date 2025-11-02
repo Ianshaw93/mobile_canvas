@@ -413,7 +413,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           escapeCsvField(baseData.originalX),
           escapeCsvField(baseData.originalY),
           escapeCsvField(baseData.pointComment),
-          escapeCsvField(`point_${point.id}_image_${index + 1}.jpg`),
+          escapeCsvField(`plan_${plan.id}_point_${point.id}_image_${index + 1}.jpg`),
           escapeCsvField(image.comment || ''),
           escapeCsvField(new Date().toISOString())
         ].join(','));
@@ -457,7 +457,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       console.log('📦 Export data loaded, creating zip file...');
 
       // Batching configuration
-      const MAX_FILES_PER_PART = 30; // tunable cap per zip part
+      const MAX_FILES_PER_PART = Number.MAX_SAFE_INTEGER; // single zip (no partitioning)
       let filesAddedThisPart = 0;
       let partIndex = 1;
 
@@ -656,7 +656,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           for (let i = 0; i < pointData.images.length; i++) {
             const image = pointData.images[i];
             if (image.data) { // Use the loaded base64 data
-              const fileName = `point_${point.id}_image_${i + 1}.jpg`;
+              const fileName = `plan_${plan.id}_point_${point.id}_image_${i + 1}.jpg`;
               imagesFolder?.file(fileName, image.data, { base64: true });
               console.log(`✅ Added image ${fileName} to zip`);
               assetCompleted += 1; // image
