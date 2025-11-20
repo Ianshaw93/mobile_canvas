@@ -36,6 +36,7 @@ export interface Point {
   planId: string;
   x: number;
   y: number;
+  status: 'Open' | 'Closed' | 'Note';
   comment?: string;
   images: Image[];
 }
@@ -116,6 +117,7 @@ interface SiteState {
   deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => Promise<void>;
   addCommentToPin: (planId: string, pointId: string, comment: string) => Promise<void>;
   addCommentToImage: (planId: string, pointId: string, imageKey: string, comment: string) => Promise<void>;
+  updatePinStatus: (planId: string, pointId: string, status: 'Open' | 'Closed' | 'Note') => Promise<void>;
   addToOfflineQueue: (item: FileQueueItem) => void;
   updateProjectImages: (projectId: string, images: Image[]) => Promise<void>;
   checkPermissions: () => Promise<void>;
@@ -166,6 +168,7 @@ const convertDBPointToPoint = (dbPoint: DBPoint, images: Image[] = []): Point =>
   planId: dbPoint.plan_id,
   x: dbPoint.x,
   y: dbPoint.y,
+  status: dbPoint.status || 'Open',
   comment: dbPoint.comment,
   images: images // Images will be filtered at the query level
 });
@@ -411,6 +414,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
           plan_id: planId,
           x: point.x,
           y: point.y,
+          status: point.status ?? 'Open',
           comment: point.comment,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -667,6 +671,35 @@ const useSiteStore = create<SiteState>((set, get) => ({
       }));
     } catch (error) {
       console.error('Error adding comment to image:', error);
+      throw error;
+    }
+  },
+
+  updatePinStatus: async (planId: string, pointId: string, status: 'Open' | 'Closed' | 'Note') => {
+    try {
+      // Save to SQL first
+      if (Capacitor.isNativePlatform()) {
+        await database.updatePointPartial(pointId, { status });
+        console.log('✅ Point status updated in SQL database:', pointId, status);
+      }
+      // Update local store
+      set(state => ({
+        projects: state.projects.map(project => ({
+          ...project,
+          plans: project.plans.map(plan =>
+            plan.id === planId
+              ? {
+                  ...plan,
+                  points: plan.points.map(point =>
+                    point.id === pointId ? { ...point, status } : point
+                  )
+                }
+              : plan
+          )
+        }))
+      }));
+    } catch (error) {
+      console.error('❌ Error updating pin status:', error);
       throw error;
     }
   },

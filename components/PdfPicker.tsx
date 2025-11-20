@@ -10,6 +10,8 @@ import ReportButton from './ReportButton';
 import { sendProjectToBackend } from './ApiCalls';
 import DownloadProjectButton from './DownloadProjectButton';
 import SupportBundleButton from './SupportBundleButton';
+import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { database } from '@/services/database';
 
 type Dimensions = {
   width: number;
@@ -110,6 +112,13 @@ const PdfPicker = () => {
     if (file && pdfCanvasRef.current) {
       // Save the original PDF data without modification
       const base64PDF = await blobToBase64(file);
+      // Convert to grayscale PDF for storage/display/export
+      let grayscalePDF = base64PDF;
+      try {
+        grayscalePDF = await convertPdfToGrayscale(base64PDF);
+      } catch (e) {
+        console.warn('Grayscale conversion failed, storing original PDF:', e);
+      }
       const projectId = selectedProjectId;
       const planId = `${Date.now()}`;
       
@@ -158,12 +167,14 @@ const PdfPicker = () => {
           };
           const renderTask = page.render(renderContext);
           await renderTask.promise;
+          // Ensure thumbnail appears grayscale too
+          grayscaleCanvasInPlace(canvas);
           const thumbnail = canvas.toDataURL();
 
           const newPlan = {
             id: planId,
             name: defaultName,
-            url: base64PDF, // Original PDF data
+            url: grayscalePDF, // Store grayscale PDF
             thumbnail, // Separate thumbnail for display
             dimensions: {
               width: originalViewport.width,   // Store original PDF dimensions
@@ -175,7 +186,7 @@ const PdfPicker = () => {
             planId: planId,
             projectId: projectId
           };
-          addCanvasRef(newPlan.id, pdfCanvasRef.current, base64PDF);
+          addCanvasRef(newPlan.id, pdfCanvasRef.current, grayscalePDF);
           await addPlan(projectId, newPlan);
           setPreviewImage(true);
           
@@ -333,6 +344,11 @@ const PdfPicker = () => {
 
       <canvas ref={pdfCanvasRef} className="hidden" />
 
+      {/* One-time migration: convert existing plan PDFs to grayscale */}
+      {mounted && (
+        <MigrationRunner projects={projects} />
+      )}
+
       {/* Management Mode Header */}
       {managementMode && (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -489,4 +505,41 @@ const PdfPicker = () => {
 };
 
 export default PdfPicker;
+
+// Background component to run one-time migration of existing PDFs to grayscale
+const MigrationRunner: React.FC<{ projects: any[] }> = ({ projects }) => {
+  useEffect(() => {
+    const flagKey = 'grayscale_migration_v1_done';
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem(flagKey)) return;
+
+    const run = async () => {
+      try {
+        for (const project of projects || []) {
+          for (const plan of (project?.plans || [])) {
+            if (typeof plan?.url === 'string' && plan.url.startsWith('data:application/pdf')) {
+              try {
+                const grayUrl = await convertPdfToGrayscale(plan.url);
+                if (grayUrl && grayUrl !== plan.url) {
+                  await database.updatePlan(plan.id, { url: grayUrl });
+                }
+              } catch (e) {
+                console.warn('Failed to grayscale plan', plan?.id, e);
+              }
+            }
+          }
+        }
+        await useSiteStore.getState().loadProjects();
+        localStorage.setItem(flagKey, '1');
+      } catch (e) {
+        console.error('Grayscale migration failed:', e);
+      }
+    };
+
+    // Defer to allow initial UI render
+    setTimeout(run, 0);
+  }, [projects]);
+
+  return null;
+};
 

@@ -8,9 +8,11 @@ const PinDetailPage = () => {
   const router = useRouter();
   const { pdfId, pinId } = router.query as { pdfId: string; pinId: string };
   const getPlan = useSiteStore((state) => state.getPlan);
+  const updatePinStatus = useSiteStore((state) => state.updatePinStatus);
   const deletePoint = useSiteStore((state) => state.deletePoint);
   const plan = getPlan(pdfId);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [status, setStatus] = useState<'Open' | 'Closed' | 'Note'>('Open');
   
   // ✅ This is the reference branch pattern - fresh data every render!
   const selectedPoint = plan?.points.find(point => point.id === pinId);
@@ -24,6 +26,13 @@ const PinDetailPage = () => {
     console.log('🔄 selectedPoint.images (FRESH):', selectedPoint?.images);
     console.log('🔄 selectedPoint.comment (FRESH):', selectedPoint?.comment);
   }, [pdfId, pinId, plan, selectedPoint]);
+
+  // Sync local status with store-selected point
+  useEffect(() => {
+    if (selectedPoint?.status) {
+      setStatus(selectedPoint.status);
+    }
+  }, [selectedPoint?.status]);
 
   // If the pin disappears (e.g., after deletion), ensure we leave this page
   useEffect(() => {
@@ -88,6 +97,21 @@ const PinDetailPage = () => {
               size={300}
               zoomLevel={2}
             />
+          </div>
+
+          {/* Status Selector */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'Open' | 'Closed' | 'Note')}
+              onBlur={() => updatePinStatus(pdfId, pinId, status)}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+              <option value="Note">Note</option>
+            </select>
           </div>
 
           {/* Images Section */}

@@ -5,7 +5,9 @@ import useSiteStore from '@/store/useSiteStore';
 // @ts-ignore
 const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
   const deletePoint = useSiteStore((state) => state.deletePoint);
+  const updatePinStatus = useSiteStore((state) => state.updatePinStatus);
   const [viewportDimensions, setViewportDimensions] = useState({ width: 0, height: 0 });
+  const [status, setStatus] = useState<'Open' | 'Closed' | 'Note'>('Open');
 
   useEffect(() => {
     const updateViewportDimensions = () => {
@@ -31,6 +33,13 @@ const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
     console.log('🔍 PinPopup selectedPoint.images:', selectedPoint?.images);
     console.log('🔍 PinPopup selectedPoint.comment:', selectedPoint?.comment);
   }, [selectedPoint]);
+
+  // Sync status from selectedPoint
+  useEffect(() => {
+    if (selectedPoint?.status) {
+      setStatus(selectedPoint.status);
+    }
+  }, [selectedPoint?.status]);
 
   const popupStyle = {
     position: 'absolute',
@@ -77,7 +86,23 @@ const PinPopup = ({ setShowPinPopup, selectedPoint, planId }) => {
             >
               Delete Pin
             </button>
-          </div>            
+          </div>
+
+          {/* Status Selector */}
+          <div className="mt-4 mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'Open' | 'Closed' | 'Note')}
+              onBlur={() => updatePinStatus(planId, selectedPoint.id, status)}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+              <option value="Note">Note</option>
+            </select>
+          </div>
+
           <CameraLogic selectedPoint={selectedPoint} planId={planId}/>
           <div>
             <button onClick={() => setShowPinPopup(false)}>Close</button>

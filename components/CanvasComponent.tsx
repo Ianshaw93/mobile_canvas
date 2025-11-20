@@ -197,7 +197,7 @@ function CanvasComponent({pdfId}) {
       } else {
         // ✅ Create new pin and store its ID
         const pointId = Date.now().toString();
-        const newPoint = { id: pointId, x, y, images: [], comment: '', planId: currentPlan.id };
+        const newPoint = { id: pointId, x, y, status: 'Open', images: [], comment: '', planId: currentPlan.id };
         console.log('📍 Creating new pin with ID:', pointId);
         addPoint(currentPlan.id, newPoint);
         renderPoints();

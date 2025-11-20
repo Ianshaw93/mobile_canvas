@@ -15,6 +15,7 @@ interface Point {
   id: string;
   x: number;
   y: number;
+  status?: 'Open' | 'Closed' | 'Note';
   comment?: string;
   images: Image[];
 }
@@ -45,6 +46,7 @@ interface CsvPoint {
   pointXOriginal: number;  // Original X coordinate
   pointYOriginal: number;  // Original Y coordinate
   pointComment: string;
+  pointStatus: 'Open' | 'Closed' | 'Note';
   imageFileName: string;
   imageComment: string;
   timestamp: string;
@@ -76,6 +78,7 @@ const generateCsvContent = (points: CsvPoint[]): string => {
     'Point X (Original)',
     'Point Y (Original)',
     'Point Comment',
+    'Point Status',
     'Image File Name',
     'Image Comment',
     'Timestamp'
@@ -96,6 +99,7 @@ const generateCsvContent = (points: CsvPoint[]): string => {
     point.pointXOriginal.toFixed(2),
     point.pointYOriginal.toFixed(2),
     point.pointComment || '',
+    point.pointStatus || 'Open',
     point.imageFileName || '',
     point.imageComment || '',
     point.timestamp
@@ -135,6 +139,7 @@ const generateProjectCsv = async (project: Project, plans: Plan[], folderName: s
           pointXOriginal: point.x,
           pointYOriginal: point.y,
           pointComment: point.comment || '',
+          pointStatus: point.status || 'Open',
           imageFileName: '',
           imageComment: '',
           timestamp

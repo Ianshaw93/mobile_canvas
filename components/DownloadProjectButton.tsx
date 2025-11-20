@@ -242,6 +242,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       'Point X (Original)',
       'Point Y (Original)',
       'Point Comment',
+      'Point Status',
       'Image File Name',
       'Image Comment',
       'Timestamp'
@@ -271,7 +272,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           normalizedY: normalizedY.toFixed(5),
           originalX: point.x.toFixed(2),
           originalY: point.y.toFixed(2),
-          pointComment: point.comment || '' // This should be the same for all images from this point
+          pointComment: point.comment || '', // This should be the same for all images from this point
+          pointStatus: point.status || 'Open'
         };
 
         // Debug: Log point comment to ensure it's being accessed correctly
@@ -302,6 +304,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
             escapeCsvField(baseData.originalX),
             escapeCsvField(baseData.originalY),
             escapeCsvField(baseData.pointComment), // Properly escaped point comment
+            escapeCsvField(baseData.pointStatus),
             escapeCsvField(''), // No image file
             escapeCsvField(''), // No image comment
             escapeCsvField(new Date().toISOString())
@@ -324,6 +327,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           escapeCsvField(baseData.originalX),
           escapeCsvField(baseData.originalY),
           escapeCsvField(baseData.pointComment), // Same point comment for all images from this pin
+          escapeCsvField(baseData.pointStatus),
           escapeCsvField(`point_${point.id}_image_${index + 1}.jpg`),
           escapeCsvField(image.comment || ''),
           escapeCsvField(new Date().toISOString())
@@ -339,7 +343,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
     const headers = [
       'Project ID', 'Project Name', 'Plan ID', 'Plan Name', 'Plan File Name',
       'Plan Width', 'Plan Height', 'Point ID', 'Point X (Normalized)', 'Point Y (Normalized)',
-      'Point X (Original)', 'Point Y (Original)', 'Point Comment', 'Image File Name',
+      'Point X (Original)', 'Point Y (Original)', 'Point Comment', 'Point Status', 'Image File Name',
       'Image Comment', 'Timestamp'
     ];
 
@@ -367,7 +371,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           normalizedY: normalizedY.toFixed(5),
           originalX: point.x.toFixed(2),
           originalY: point.y.toFixed(2),
-          pointComment: point.comment || ''
+          pointComment: point.comment || '',
+          pointStatus: point.status || 'Open'
         };
 
         const escapeCsvField = (field: string | number) => {
@@ -393,6 +398,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
             escapeCsvField(baseData.originalX),
             escapeCsvField(baseData.originalY),
             escapeCsvField(baseData.pointComment),
+            escapeCsvField(baseData.pointStatus),
             escapeCsvField(''),
             escapeCsvField(''),
             escapeCsvField(new Date().toISOString())
@@ -413,6 +419,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           escapeCsvField(baseData.originalX),
           escapeCsvField(baseData.originalY),
           escapeCsvField(baseData.pointComment),
+          escapeCsvField(baseData.pointStatus),
           escapeCsvField(`plan_${plan.id}_point_${point.id}_image_${index + 1}.jpg`),
           escapeCsvField(image.comment || ''),
           escapeCsvField(new Date().toISOString())

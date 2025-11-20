@@ -14,19 +14,19 @@ const config: CapacitorConfig = {
       }
     }
   },
-  // server: {
-  //   androidScheme: 'http',
-  //   iosScheme: 'myapp',
-  //   url: "http://192.168.0.14:3000",
-  //   allowNavigation: ["*"],
-  //   cleartext: true
-  // },
-  "server": {
-    "androidScheme": "http",
-    "allowNavigation": ["*"],
-  iosScheme: 'myapp',
-    "cleartext": true
+  server: {
+    androidScheme: 'http',
+    iosScheme: 'myapp',
+    url: "http://192.168.0.14:3000",
+    allowNavigation: ["*"],
+    cleartext: true
   },
+  // "server": {
+  //   "androidScheme": "http",
+  //   "allowNavigation": ["*"],
+  // iosScheme: 'myapp',
+  //   "cleartext": true
+  // },
 
 };
 

@@ -28,6 +28,7 @@ export interface DBPoint {
   plan_id: string;
   x: number;
   y: number;
+  status: 'Open' | 'Closed' | 'Note';
   comment?: string;
   created_at: string;
   updated_at: string;
@@ -47,7 +48,7 @@ class Database {
   private static instance: Database;
   private dbConnection: SQLiteDBConnection | null = null;
   private readonly DB_NAME = 'mobile_canvas_db';
-  private readonly DB_VERSION = 2; // Increment for display_order migration
+  private readonly DB_VERSION = 3; // Increment for new migrations
   private readonly isNative = Capacitor.isNativePlatform();
 
   private constructor() {}
@@ -83,6 +84,9 @@ class Database {
     if (isConnection.result) {
       // Get existing connection
       this.dbConnection = await sqliteConnection.retrieveConnection(this.DB_NAME, false);
+      await this.dbConnection.open();
+      // Ensure migrations run on existing connections as well
+      await this.runMigrations();
     } else {
       // Create new connection
       this.dbConnection = await sqliteConnection.createConnection(
@@ -142,6 +146,7 @@ class Database {
         plan_id TEXT NOT NULL,
         x REAL NOT NULL,
         y REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Open',
         comment TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -167,10 +172,9 @@ class Database {
     const db = await this.getDBConnection();
     
     try {
-      // Check if display_order column exists in plans table
-      const tableInfo = await db.query("PRAGMA table_info(plans)");
-      const hasDisplayOrder = tableInfo.values?.some((column: any) => column.name === 'display_order');
-      
+      // Migration 1: Ensure display_order in plans
+      const plansInfo = await db.query("PRAGMA table_info(plans)");
+      const hasDisplayOrder = plansInfo.values?.some((column: any) => column.name === 'display_order');
       if (!hasDisplayOrder) {
         console.log('[DB Migration] Adding display_order column to plans table');
         
@@ -189,6 +193,17 @@ class Database {
         `);
         
         console.log('[DB Migration] Successfully migrated existing plans with display_order');
+      }
+
+      // Migration 2: Add status to points
+      const pointsInfo = await db.query("PRAGMA table_info(points)");
+      const hasStatus = pointsInfo.values?.some((column: any) => column.name === 'status');
+      if (!hasStatus) {
+        console.log('[DB Migration] Adding status column to points table');
+        await db.execute("ALTER TABLE points ADD COLUMN status TEXT NOT NULL DEFAULT 'Open'");
+        // Backfill: set any NULL status to 'Open' (older SQLite may not backfill existing NULLs)
+        await db.execute("UPDATE points SET status = 'Open' WHERE status IS NULL");
+        console.log('[DB Migration] Successfully added status to points table');
       }
     } catch (error) {
       console.error('[DB Migration] Error running migrations:', error);
@@ -324,8 +339,8 @@ class Database {
   async createPoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO points (id, plan_id, x, y, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [point.id, point.plan_id, point.x, point.y, point.comment || null, point.created_at, point.updated_at]
+      'INSERT INTO points (id, plan_id, x, y, status, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [point.id, point.plan_id, point.x, point.y, point.status, point.comment || null, point.created_at, point.updated_at]
     );
   }
 
@@ -344,8 +359,8 @@ class Database {
   async updatePoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'UPDATE points SET plan_id = ?, x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [point.plan_id, point.x, point.y, point.comment || null, point.updated_at, point.id]
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [point.plan_id, point.x, point.y, point.status, point.comment || null, point.updated_at, point.id]
     );
   }
 
@@ -366,8 +381,8 @@ class Database {
     };
 
     await db.run(
-      'UPDATE points SET plan_id = ?, x = ?, y = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.comment || null, updatedPoint.updated_at, id]
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, updated_at = ? WHERE id = ?',
+      [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.status, updatedPoint.comment || null, updatedPoint.updated_at, id]
     );
   }
 
