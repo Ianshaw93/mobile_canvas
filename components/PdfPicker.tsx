@@ -378,6 +378,31 @@ const PdfPicker = () => {
               <option value="Kirsty Cameron">Kirsty Cameron</option>
             </select>
           </div>
+
+          {/* Danger zone */}
+          <div className="mt-4 border-t pt-3">
+            <button
+              onClick={async () => {
+                if (!selectedProjectId) return;
+                const ok = typeof window === 'undefined' ? false : window.confirm(
+                  `Delete project "${selectedProject?.name}"? This will permanently remove all plans, pins and images. This cannot be undone.`
+                );
+                if (!ok) return;
+                try {
+                  await useSiteStore.getState().deleteProject(selectedProjectId);
+                  setSelectedProjectId(null);
+                  setNewClientName('');
+                  setNewSiteVisitNumber('1');
+                  setNewEngineerName('');
+                } catch (e) {
+                  console.error('Failed to delete project', e);
+                }
+              }}
+              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+            >
+              Delete Project
+            </button>
+          </div>
         </div>
       )}
 
