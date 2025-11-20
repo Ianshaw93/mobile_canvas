@@ -81,6 +81,9 @@ type FileQueueItem = {
 export interface Project {
   id: string;
   name: string;
+  clientName: string;
+  siteVisitNumber: number;
+  engineerName: string;
   createdAt: number;
   updatedAt: number;
   plans: Plan[];
@@ -113,6 +116,7 @@ interface SiteState {
   addPoint: (planId: string, point: Point) => Promise<void>;
   deletePoint: (planId: string, pointId: string) => Promise<void>;
   changePointLocation: (planId: string, pointId: string, x: number, y: number) => Promise<void>;
+  updateProject: (id: string, updates: { name?: string; clientName?: string; siteVisitNumber?: number; engineerName?: string }) => Promise<void>;
   addImageToPin: (planId: string, pointId: string, image: Image) => Promise<void>;
   deleteImageFromPin: (planId: string, pointId: string, imageKey: string) => Promise<void>;
   addCommentToPin: (planId: string, pointId: string, comment: string) => Promise<void>;
@@ -123,7 +127,7 @@ interface SiteState {
   checkPermissions: () => Promise<void>;
   requestCameraPermission: () => Promise<boolean>;
   requestStoragePermission: () => Promise<boolean>;
-  addProject: (name: string) => Promise<void>;
+  addProject: (input: { name: string; clientName: string; siteVisitNumber: number; engineerName: string }) => Promise<string>;
   updatePlanName: (projectId: string, planId: string, newName: string) => Promise<void>;
   movePlanUp: (projectId: string, planId: string) => Promise<void>;
   movePlanDown: (projectId: string, planId: string) => Promise<void>;
@@ -185,6 +189,9 @@ const convertDBImageToImage = (dbImage: DBImage, projectId: string, planId: stri
 const convertDBProjectToProject = (dbProject: DBProject, plans: Plan[] = []): Project => ({
   id: dbProject.id,
   name: dbProject.name,
+  clientName: dbProject.client_name ?? '',
+  siteVisitNumber: dbProject.site_visit_number ?? 1,
+  engineerName: dbProject.engineer_name ?? '',
   createdAt: new Date(dbProject.created_at).getTime(),
   updatedAt: new Date(dbProject.updated_at).getTime(),
   plans
@@ -207,6 +214,39 @@ const useSiteStore = create<SiteState>((set, get) => ({
     network: false,
     isChecking: false,
     error: null 
+  },
+
+  updateProject: async (id: string, updates: { name?: string; clientName?: string; siteVisitNumber?: number; engineerName?: string }) => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const dbUpdates: Partial<DBProject> = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.clientName !== undefined) dbUpdates.client_name = updates.clientName;
+        if (updates.siteVisitNumber !== undefined) dbUpdates.site_visit_number = updates.siteVisitNumber;
+        if (updates.engineerName !== undefined) dbUpdates.engineer_name = updates.engineerName;
+        await database.updateProject(id, dbUpdates);
+      }
+
+      set(state => ({
+        projects: state.projects.map(p => 
+          p.id === id
+            ? {
+                ...p,
+                name: updates.name ?? p.name,
+                clientName: updates.clientName ?? p.clientName,
+                siteVisitNumber: updates.siteVisitNumber ?? p.siteVisitNumber,
+                engineerName: updates.engineerName ?? p.engineerName,
+                updatedAt: Date.now()
+              }
+            : p
+        )
+      }));
+      get().addToast?.('Project details updated', 'success');
+    } catch (e) {
+      console.error('Error updating project', e);
+      get().addToast?.('Failed to update project', 'error');
+      throw e;
+    }
   },
   canvasRef: new Map(),
 
@@ -879,14 +919,17 @@ const useSiteStore = create<SiteState>((set, get) => ({
     }
   },
 
-  addProject: async (name: string) => {
+  addProject: async (input: { name: string; clientName: string; siteVisitNumber: number; engineerName: string }) => {
     try {
       const projectId = `proj_${Date.now()}`;
       const now = new Date().toISOString();
       
       const dbProject: DBProject = {
         id: projectId,
-        name,
+        name: input.name,
+        client_name: input.clientName ?? '',
+        site_visit_number: input.siteVisitNumber ?? 1,
+        engineer_name: input.engineerName ?? '',
         created_at: now,
         updated_at: now
       };
@@ -897,7 +940,10 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
       const project: Project = {
         id: projectId,
-        name,
+        name: input.name,
+        clientName: input.clientName ?? '',
+        siteVisitNumber: input.siteVisitNumber ?? 1,
+        engineerName: input.engineerName ?? '',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         plans: []
@@ -908,6 +954,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
       }));
 
       get().addToast?.('Project created successfully', 'success');
+      return projectId;
     } catch (error) {
       console.error('Error creating project:', error);
       get().addToast?.('Failed to create project', 'error');

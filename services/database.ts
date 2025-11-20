@@ -5,6 +5,9 @@ import { Capacitor } from '@capacitor/core';
 export interface DBProject {
   id: string;
   name: string;
+  site_visit_number?: number;
+  engineer_name?: string;
+  client_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -48,7 +51,7 @@ class Database {
   private static instance: Database;
   private dbConnection: SQLiteDBConnection | null = null;
   private readonly DB_NAME = 'mobile_canvas_db';
-  private readonly DB_VERSION = 3; // Increment for new migrations
+  private readonly DB_VERSION = 5; // Increment for new migrations
   private readonly isNative = Capacitor.isNativePlatform();
 
   private constructor() {}
@@ -116,6 +119,9 @@ class Database {
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        site_visit_number INTEGER DEFAULT 1,
+        engineer_name TEXT,
+        client_name TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -205,6 +211,26 @@ class Database {
         await db.execute("UPDATE points SET status = 'Open' WHERE status IS NULL");
         console.log('[DB Migration] Successfully added status to points table');
       }
+
+      // Migration 3: Add engineer_name and site_visit_number to projects
+      const projectsInfo = await db.query("PRAGMA table_info(projects)");
+      const hasEngineerName = projectsInfo.values?.some((column: any) => column.name === 'engineer_name');
+      const hasSiteVisitNumber = projectsInfo.values?.some((column: any) => column.name === 'site_visit_number');
+      const hasClientName = projectsInfo.values?.some((column: any) => column.name === 'client_name');
+      if (!hasEngineerName) {
+        console.log('[DB Migration] Adding engineer_name column to projects table');
+        await db.execute("ALTER TABLE projects ADD COLUMN engineer_name TEXT");
+      }
+      if (!hasSiteVisitNumber) {
+        console.log('[DB Migration] Adding site_visit_number column to projects table');
+        await db.execute("ALTER TABLE projects ADD COLUMN site_visit_number INTEGER DEFAULT 1");
+      }
+
+      // Migration 4: Add client_name to projects
+      if (!hasClientName) {
+        console.log('[DB Migration] Adding client_name column to projects table');
+        await db.execute("ALTER TABLE projects ADD COLUMN client_name TEXT");
+      }
     } catch (error) {
       console.error('[DB Migration] Error running migrations:', error);
       // Don't throw - let app continue with basic functionality
@@ -215,8 +241,8 @@ class Database {
   async createProject(project: DBProject): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-      [project.id, project.name, project.created_at, project.updated_at]
+      'INSERT INTO projects (id, name, site_visit_number, engineer_name, client_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [project.id, project.name, project.site_visit_number ?? 1, project.engineer_name ?? null, project.client_name ?? null, project.created_at, project.updated_at]
     );
   }
 
@@ -224,6 +250,36 @@ class Database {
     const db = await this.getDBConnection();
     const result = await db.query('SELECT * FROM projects WHERE id = ?', [id]);
     return result.values?.[0] as DBProject | undefined;
+  }
+
+  async updateProject(id: string, updates: Partial<DBProject>): Promise<void> {
+    const db = await this.getDBConnection();
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) {
+      setClauses.push('name = ?');
+      values.push(updates.name);
+    }
+    if (updates.site_visit_number !== undefined) {
+      setClauses.push('site_visit_number = ?');
+      values.push(updates.site_visit_number);
+    }
+    if (updates.engineer_name !== undefined) {
+      setClauses.push('engineer_name = ?');
+      values.push(updates.engineer_name);
+    }
+    if (updates.client_name !== undefined) {
+      setClauses.push('client_name = ?');
+      values.push(updates.client_name);
+    }
+
+    setClauses.push('updated_at = ?');
+    values.push(new Date().toISOString());
+    values.push(id);
+
+    const query = `UPDATE projects SET ${setClauses.join(', ')} WHERE id = ?`;
+    await db.run(query, values);
   }
 
   async getAllProjects(): Promise<DBProject[]> {

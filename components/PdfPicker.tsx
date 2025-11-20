@@ -61,7 +61,11 @@ const PdfPicker = () => {
   const pdfjs = usePDF();
   const [mounted, setMounted] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [newClientName, setNewClientName] = useState<string>('');
+  const [newSiteVisitNumber, setNewSiteVisitNumber] = useState<string>('1');
+  const [newEngineerName, setNewEngineerName] = useState<string>('');
   const addProject = useSiteStore((state) => state.addProject);
+  const updateProject = useSiteStore((state) => state.updateProject);
   const setSelectedProjectId = useSiteStore((state) => state.setSelectedProjectId);
   const projects = useSiteStore((state) => state.projects);
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
@@ -78,6 +82,15 @@ const PdfPicker = () => {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Sync editable fields with selected project metadata
+  useEffect(() => {
+    if (selectedProject) {
+      setNewClientName(selectedProject.clientName || '');
+      setNewSiteVisitNumber(String(selectedProject.siteVisitNumber ?? 1));
+      setNewEngineerName(selectedProject.engineerName || '');
+    }
+  }, [selectedProject?.id]);
 
   // Add useEffect to handle automatic project selection
   useEffect(() => {
@@ -293,10 +306,14 @@ const PdfPicker = () => {
           <button
             onClick={async () => {
               if (newProjectName.trim()) {
-                const projectId = `proj_${Date.now()}`;
-                addProject(newProjectName);
+                const id = await addProject({
+                  name: newProjectName.trim(),
+                  clientName: '',
+                  siteVisitNumber: 1,
+                  engineerName: ''
+                });
                 setNewProjectName('');
-                setSelectedProjectId(projectId);
+                setSelectedProjectId(id);
               }
             }}
             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:ring-2 focus:ring-blue-300"
@@ -305,6 +322,64 @@ const PdfPicker = () => {
           </button>
         </div>
       </div>
+
+      {/* Selected Project Details */}
+      {selectedProject && (
+        <div className="mb-4 p-3 border rounded bg-white/50">
+          <div className="font-semibold mb-2">Project Details</div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm">Client Name</label>
+            <input
+              type="text"
+              value={newClientName}
+              onChange={(e) => setNewClientName(e.target.value)}
+              onBlur={() => updateProject(selectedProject.id, { clientName: newClientName.trim() })}
+              className="p-2 border rounded text-black w-60"
+              aria-label="Client Name (selected project)"
+            />
+
+            <label className="text-sm">Project Name</label>
+            <input
+              type="text"
+              value={selectedProject.name}
+              onChange={(e) => updateProject(selectedProject.id, { name: e.target.value })}
+              className="p-2 border rounded text-black w-60"
+              aria-label="Project Name (selected project)"
+            />
+
+            <label className="text-sm">Site visit number</label>
+            <input
+              type="number"
+              min="1"
+              value={newSiteVisitNumber}
+              onChange={(e) => setNewSiteVisitNumber(e.target.value)}
+              onBlur={() => updateProject(selectedProject.id, { siteVisitNumber: Number(newSiteVisitNumber) || 1 })}
+              className="p-2 border rounded text-black w-60"
+              aria-label="Site visit number (selected project)"
+            />
+
+            <label className="text-sm">Engineer Name</label>
+            <select
+              value={newEngineerName}
+              onChange={(e) => {
+                setNewEngineerName(e.target.value);
+                updateProject(selectedProject.id, { engineerName: e.target.value });
+              }}
+              className="p-2 border rounded text-black w-60"
+              aria-label="Engineer Name (selected project)"
+            >
+              <option value="">Select engineer</option>
+              <option value="Joana Kruk">Joana Kruk</option>
+              <option value="Sam Bennett">Sam Bennett</option>
+              <option value="Thomas O'Driscoll">Thomas O'Driscoll</option>
+              <option value="Diana Prostire">Diana Prostire</option>
+              <option value="Eoghan O’Meara">Eoghan O’Meara</option>
+              <option value="Kevin Kurniawan">Kevin Kurniawan</option>
+              <option value="Kirsty Cameron">Kirsty Cameron</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Add a visual cue when project is selected */}
       {selectedProjectId && (
