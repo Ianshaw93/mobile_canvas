@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import useSiteStore from '@/store/useSiteStore';
 import { usePDF } from '@/hooks/usePDF';
+import { grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
 
 type PdfViewerProps = {
   pdfId: string;
@@ -62,6 +63,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
       const renderTask = page.render(renderContext);
       await renderTask.promise;
+      // Force grayscale in viewer regardless of stored PDF color
+      grayscaleCanvasInPlace(canvas);
 
       // // Convert the rendered PDF on the canvas to an image URL
       // const imageUrl = canvas.toDataURL('image/png');

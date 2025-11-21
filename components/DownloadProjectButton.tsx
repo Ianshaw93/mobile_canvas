@@ -5,6 +5,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { usePDF } from '@/hooks/usePDF';
+import { convertPdfToGrayscale } from '@/utils/pdfGrayscale';
 
 // @ts-ignore
 const generatePinPreviewImage = async (pdfjs, plan, point, pointIndex, size = 300, zoomLevel = 2) => {
@@ -614,7 +615,13 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       for (const planData of exportData.plans) {
         const plan = planData.plan;
         if (plan.url) {
-          const pdfData = plan.url.split(',')[1]; // Remove data URL prefix
+          let grayscaleDataUrl = plan.url;
+          try {
+            grayscaleDataUrl = await convertPdfToGrayscale(plan.url);
+          } catch (e) {
+            console.warn('Export grayscale conversion failed, using original PDF:', e);
+          }
+          const pdfData = grayscaleDataUrl.split(',')[1]; // Remove data URL prefix
           const fileName = `${plan.name || plan.id}.pdf`;
           pdfsFolder?.file(fileName, pdfData, { base64: true });
           assetCompleted += 1; // PDF added
