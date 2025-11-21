@@ -326,6 +326,10 @@ class Database {
       setClauses.push('url = ?');
       values.push(updates.url);
     }
+    if (updates.thumbnail !== undefined) {
+      setClauses.push('thumbnail = ?');
+      values.push(updates.thumbnail);
+    }
     if (updates.width !== undefined) {
       setClauses.push('width = ?');
       values.push(updates.width);

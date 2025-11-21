@@ -23,6 +23,8 @@ import { database } from '@/services/database';
 import type { DBProject, DBPlan, DBPoint, DBImage } from '@/services/database';
 import { v4 as uuidv4 } from 'uuid';
 import { processImageData } from '@/utils/imageProcessing';
+import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { Preferences } from '@capacitor/preferences';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
 
@@ -295,6 +297,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
       await get().loadProjects();
       console.log('[Store] Projects loaded successfully');
       set({ isLoading: false });
+      
+      // Run grayscale migration at startup (once)
+      await get().runGrayscaleMigrationIfNeeded();
     } catch (error) {
       console.error('[Store] Error during initialization:', error);
       set({ isLoading: false, error: error instanceof Error ? error.message : 'Failed to initialize store' });
@@ -374,6 +379,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
         
         console.log('[Store] Loaded complete projects with plans and points:', projects);
         set({ projects });
+        
+        // Ensure migration runs after loading projects as well
+        await useSiteStore.getState().runGrayscaleMigrationIfNeeded();
       } else {
         set({ projects: [] });
       }
@@ -1356,6 +1364,109 @@ const useSiteStore = create<SiteState>((set, get) => ({
 }));
 
 export default useSiteStore;
+
+// Helper: generate grayscale thumbnail from a PDF (data URL or base64)
+async function generateGrayscaleThumbnailFromPdf(pdfDataUrlOrBase64: string): Promise<string> {
+  // Lazy import pdf.js to avoid SSR issues
+  // @ts-ignore
+  const pdfjs = await import('pdfjs-dist/build/pdf');
+  // @ts-ignore
+  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+  const base64 = pdfDataUrlOrBase64.includes(',')
+    ? pdfDataUrlOrBase64.split(',')[1]
+    : pdfDataUrlOrBase64;
+  const binaryString = typeof atob === 'function' ? atob(base64) : '';
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  // @ts-ignore
+  const loadingTask = pdfjs.getDocument({ data: bytes.buffer });
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const scale = 1.5;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise;
+  grayscaleCanvasInPlace(canvas);
+  return canvas.toDataURL();
+}
+
+// Extend the store with a runtime migration
+// Note: defined after the store; reference via useSiteStore.getState()
+// @ts-ignore
+useSiteStore.setState((state: any) => ({
+  ...state,
+  runGrayscaleMigrationIfNeeded: async () => {
+    try {
+      // Skip in SSR
+      if (typeof window === 'undefined') return;
+      const flagKey = 'grayscale_migration_v3_done';
+      
+      // Use Capacitor Preferences when available
+      let alreadyDone = false;
+      try {
+        const pref = await Preferences.get({ key: flagKey });
+        alreadyDone = !!pref.value;
+      } catch {
+        alreadyDone = !!localStorage.getItem(flagKey);
+      }
+      if (alreadyDone) return;
+
+      const { projects } = useSiteStore.getState();
+      let changed = false;
+
+      for (const project of projects || []) {
+        for (const plan of (project?.plans || [])) {
+          if (typeof plan?.url !== 'string') continue;
+          try {
+            const grayUrl = await convertPdfToGrayscale(plan.url);
+            const newThumb = await generateGrayscaleThumbnailFromPdf(grayUrl);
+
+            if (grayUrl && (grayUrl !== plan.url || newThumb !== plan.thumbnail)) {
+              // Update DB if native
+              if (Capacitor.isNativePlatform()) {
+                await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
+              }
+              // Update in-memory state
+              useSiteStore.setState((prev: any) => ({
+                projects: prev.projects.map((p: any) =>
+                  p.id === project.id
+                    ? {
+                        ...p,
+                        plans: p.plans.map((pl: any) =>
+                          pl.id === plan.id ? { ...pl, url: grayUrl, thumbnail: newThumb } : pl
+                        )
+                      }
+                    : p
+                )
+              }));
+              changed = true;
+            }
+          } catch (e) {
+            console.warn('Grayscale conversion failed for plan during startup migration:', plan?.id, e);
+          }
+        }
+      }
+
+      if (changed) {
+        console.log('Grayscale migration updated plans; state refreshed.');
+      }
+
+      try {
+        await Preferences.set({ key: flagKey, value: '1' });
+      } catch {
+        localStorage.setItem(flagKey, '1');
+      }
+    } catch (e) {
+      console.error('Error running grayscale migration at startup:', e);
+    }
+  }
+}));
 
 // Add cleanup function
 const cleanupStorage = async (state: SiteState) => {

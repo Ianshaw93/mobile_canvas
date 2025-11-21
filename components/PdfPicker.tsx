@@ -78,6 +78,17 @@ const PdfPicker = () => {
   const [managementMode, setManagementMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [movingPlanId, setMovingPlanId] = useState<string | null>(null);
+  const [namePromptOpen, setNamePromptOpen] = useState<boolean>(false);
+  const [proposedPlanName, setProposedPlanName] = useState<string>('');
+  const [pendingPlanData, setPendingPlanData] = useState<null | {
+    planId: string;
+    grayscalePDF: string;
+    thumbnail: string;
+    width: number;
+    height: number;
+    displayScale: number;
+    projectId: string;
+  }>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -143,7 +154,6 @@ const PdfPicker = () => {
       // Get current number of plans to determine the index
       const currentPlans = selectedProject?.plans || [];
       const newIndex = currentPlans.length;
-      const defaultName = `Building 1 Floor ${newIndex + 1}`;
 
       console.log("projectId: ", projectId, "planId: ", planId, file.name);
       addToOfflineQueue({
@@ -184,32 +194,63 @@ const PdfPicker = () => {
           grayscaleCanvasInPlace(canvas);
           const thumbnail = canvas.toDataURL();
 
-          const newPlan = {
-            id: planId,
-            name: defaultName,
-            url: grayscalePDF, // Store grayscale PDF
-            thumbnail, // Separate thumbnail for display
-            dimensions: {
-              width: originalViewport.width,   // Store original PDF dimensions
-              height: originalViewport.height,
-              displayScale: displayScale       // Store the display scale
-            },
-            points: [],
-            images: [],
-            planId: planId,
-            projectId: projectId
-          };
-          addCanvasRef(newPlan.id, pdfCanvasRef.current, grayscalePDF);
-          await addPlan(projectId, newPlan);
-          setPreviewImage(true);
-          
-          setEditingPlanId(planId);
-          setEditingName(defaultName);
+          // Stash data and prompt for a name (blank by default)
+          setPendingPlanData({
+            planId,
+            grayscalePDF,
+            thumbnail,
+            width: originalViewport.width,
+            height: originalViewport.height,
+            displayScale,
+            projectId
+          });
+          setProposedPlanName('');
+          setNamePromptOpen(true);
         }
       } catch (error) {
         console.error('Error processing PDF:', error);
       }
     }
+  };
+
+  // Confirm adding plan after validating name
+  const confirmAddPlanWithName = async () => {
+    if (!pendingPlanData || !selectedProjectId) return;
+    const trimmed = proposedPlanName.trim();
+    if (!trimmed) return;
+    const nameExists = plans.some(p => (p.name || '').trim().toLowerCase() === trimmed.toLowerCase());
+    if (nameExists) return;
+
+    const newPlan = {
+      id: pendingPlanData.planId,
+      name: trimmed,
+      url: pendingPlanData.grayscalePDF,
+      thumbnail: pendingPlanData.thumbnail,
+      dimensions: {
+        width: pendingPlanData.width,
+        height: pendingPlanData.height,
+        displayScale: pendingPlanData.displayScale
+      },
+      points: [],
+      images: [],
+      planId: pendingPlanData.planId,
+      projectId: pendingPlanData.projectId
+    };
+
+    addCanvasRef(newPlan.id, pdfCanvasRef.current, pendingPlanData.grayscalePDF);
+    await addPlan(selectedProjectId, newPlan);
+    setPreviewImage(true);
+
+    // Cleanup and close
+    setPendingPlanData(null);
+    setProposedPlanName('');
+    setNamePromptOpen(false);
+  };
+
+  const cancelAddPlan = () => {
+    setPendingPlanData(null);
+    setProposedPlanName('');
+    setNamePromptOpen(false);
   };
 
   // Navigate to the PDF view
@@ -559,12 +600,36 @@ const PdfPicker = () => {
                 )}
               </div>
             )}
-            <img
-              src={plan.thumbnail}
-              alt={plan.name}
+            <div
               onClick={() => viewPdf(plan.url, plan.id)}
-              className="max-w-sm cursor-pointer"
-            />
+              className="relative inline-block max-w-sm cursor-pointer"
+            >
+              <img
+                src={plan.thumbnail}
+                alt={plan.name}
+                className="block w-full h-auto"
+              />
+              {(plan?.points || []).map((pt: any) => {
+                const displayScale = plan?.dimensions?.displayScale || 1.5;
+                const baseWidth = plan?.dimensions?.width || 1;
+                const baseHeight = plan?.dimensions?.height || 1;
+                const leftPct = (pt.x / (baseWidth * displayScale)) * 100;
+                const topPct = (pt.y / (baseHeight * displayScale)) * 100;
+                return (
+                  <span
+                    key={pt.id}
+                    className="absolute rounded-full bg-blue-500 border-2 border-white"
+                    style={{
+                      width: 8,
+                      height: 8,
+                      left: `${leftPct}%`,
+                      top: `${topPct}%`,
+                      transform: 'translate(-50%, -50%)'
+                    }}
+                  />
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
@@ -600,6 +665,55 @@ const PdfPicker = () => {
           </div>
         </div>
       )}
+
+      {/* Plan Name Prompt Modal */}
+      {namePromptOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Name your plan</h3>
+            <div className="mb-4">
+              <input
+                type="text"
+                value={proposedPlanName}
+                onChange={(e) => setProposedPlanName(e.target.value)}
+                className="p-2 border rounded text-black w-full"
+                placeholder="Enter a unique name"
+                aria-label="Plan name"
+                autoFocus
+              />
+              {proposedPlanName.trim().length === 0 && (
+                <p className="text-sm text-gray-500 mt-1">Name must have at least 1 character.</p>
+              )}
+              {proposedPlanName.trim().length > 0 && plans.some(p => (p.name || '').trim().toLowerCase() === proposedPlanName.trim().toLowerCase()) && (
+                <p className="text-sm text-red-600 mt-1">A plan with this name already exists in this project.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={cancelAddPlan}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAddPlanWithName}
+                disabled={
+                  proposedPlanName.trim().length === 0 ||
+                  plans.some(p => (p.name || '').trim().toLowerCase() === proposedPlanName.trim().toLowerCase())
+                }
+                className={`px-4 py-2 rounded text-white ${
+                  proposedPlanName.trim().length === 0 ||
+                  plans.some(p => (p.name || '').trim().toLowerCase() === proposedPlanName.trim().toLowerCase())
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
@@ -609,19 +723,51 @@ export default PdfPicker;
 // Background component to run one-time migration of existing PDFs to grayscale
 const MigrationRunner: React.FC<{ projects: any[] }> = ({ projects }) => {
   useEffect(() => {
-    const flagKey = 'grayscale_migration_v1_done';
+    const flagKey = 'grayscale_migration_v2_done';
     if (typeof window === 'undefined') return;
     if (localStorage.getItem(flagKey)) return;
 
     const run = async () => {
       try {
+        // Lazy import pdf.js for thumbnail generation
+        // @ts-ignore
+        const pdfjs = await import('pdfjs-dist/build/pdf');
+        // @ts-ignore
+        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+        const renderGrayThumbnail = async (pdfDataUrlOrBase64: string) => {
+          // Accept data URL or raw base64
+          const base64 = pdfDataUrlOrBase64.includes(',')
+            ? pdfDataUrlOrBase64.split(',')[1]
+            : pdfDataUrlOrBase64;
+          const bin = typeof atob === 'function' ? atob(base64) : '';
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          // @ts-ignore
+          const loadingTask = pdfjs.getDocument({ data: bytes.buffer });
+          const pdf = await loadingTask.promise;
+          const page = await pdf.getPage(1);
+          const scale = 1.5;
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { alpha: false });
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise;
+          grayscaleCanvasInPlace(canvas);
+          return canvas.toDataURL();
+        };
+
         for (const project of projects || []) {
           for (const plan of (project?.plans || [])) {
-            if (typeof plan?.url === 'string' && plan.url.startsWith('data:application/pdf')) {
+            if (typeof plan?.url === 'string') {
               try {
                 const grayUrl = await convertPdfToGrayscale(plan.url);
+                const newThumb = await renderGrayThumbnail(grayUrl);
                 if (grayUrl && grayUrl !== plan.url) {
-                  await database.updatePlan(plan.id, { url: grayUrl });
+                  await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
+                } else if (newThumb && newThumb !== plan.thumbnail) {
+                  await database.updatePlan(plan.id, { thumbnail: newThumb });
                 }
               } catch (e) {
                 console.warn('Failed to grayscale plan', plan?.id, e);
