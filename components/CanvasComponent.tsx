@@ -2,6 +2,7 @@ import React, { useRef, useLayoutEffect, useCallback, useState, useMemo, useEffe
 import useSiteStore from '@/store/useSiteStore';
 import pinSvg from './pin_svg';
 import PinPopup from './PinPopup';
+import type { Point as StorePoint } from '@/store/useSiteStore';
 
 // TODO: double click for pin drops
 // pin popup to show in middle of innerwindow, rather than centre of pdf/perhaps could be offset to pin location
@@ -197,7 +198,7 @@ function CanvasComponent({pdfId}) {
       } else {
         // ✅ Create new pin and store its ID
         const pointId = Date.now().toString();
-        const newPoint = { id: pointId, x, y, status: 'Open', images: [], comment: '', planId: currentPlan.id };
+        const newPoint: StorePoint = { id: pointId, x, y, status: 'Open', images: [], comment: '', planId: currentPlan.id };
         console.log('📍 Creating new pin with ID:', pointId);
         addPoint(currentPlan.id, newPoint);
         renderPoints();

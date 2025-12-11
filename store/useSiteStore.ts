@@ -166,6 +166,7 @@ interface SiteState {
       }>;
     }>;
   }>;
+  runGrayscaleMigrationIfNeeded: () => Promise<void>;
 }
 
 // Helper functions to convert between DB and UI types
@@ -217,6 +218,8 @@ const useSiteStore = create<SiteState>((set, get) => ({
     isChecking: false,
     error: null 
   },
+  // Placeholder; real implementation is injected below via setState
+  runGrayscaleMigrationIfNeeded: async () => {},
 
   updateProject: async (id: string, updates: { name?: string; clientName?: string; siteVisitNumber?: number; engineerName?: string }) => {
     try {

@@ -342,7 +342,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   // Helper function to generate CSV from export data
   const generateCSVFromExportData = (exportData: any) => {
     const headers = [
-      'Project ID', 'Project Name', 'Plan ID', 'Plan Name', 'Plan File Name',
+      'Project ID', 'Project Name', 'Client Name', 'Engineer Name', 'Site Visit Number', 'Project Created At', 'Project Updated At',
+      'Plan ID', 'Plan Name', 'Plan File Name',
       'Plan Width', 'Plan Height', 'Point ID', 'Point X (Normalized)', 'Point Y (Normalized)',
       'Point X (Original)', 'Point Y (Original)', 'Point Comment', 'Point Status', 'Image File Name',
       'Image Comment', 'Timestamp'
@@ -362,6 +363,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         const baseData = {
           projectId: exportData.project.id,
           projectName: exportData.project.name,
+          clientName: exportData.project.clientName || '',
+          engineerName: exportData.project.engineerName || '',
+          siteVisitNumber: exportData.project.siteVisitNumber ?? '',
+          projectCreatedAt: exportData.project.createdAt ? new Date(exportData.project.createdAt).toISOString() : '',
+          projectUpdatedAt: exportData.project.updatedAt ? new Date(exportData.project.updatedAt).toISOString() : '',
           planId: plan.id,
           planName: plan.name || '',
           planFileName,
@@ -388,6 +394,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           return [[
             escapeCsvField(baseData.projectId),
             escapeCsvField(baseData.projectName),
+            escapeCsvField(baseData.clientName),
+            escapeCsvField(baseData.engineerName),
+            escapeCsvField(baseData.siteVisitNumber),
+            escapeCsvField(baseData.projectCreatedAt),
+            escapeCsvField(baseData.projectUpdatedAt),
             escapeCsvField(baseData.planId),
             escapeCsvField(baseData.planName),
             escapeCsvField(baseData.planFileName),
@@ -409,6 +420,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         return pointData.images.map((image: any, index: number) => [
           escapeCsvField(baseData.projectId),
           escapeCsvField(baseData.projectName),
+          escapeCsvField(baseData.clientName),
+          escapeCsvField(baseData.engineerName),
+          escapeCsvField(baseData.siteVisitNumber),
+          escapeCsvField(baseData.projectCreatedAt),
+          escapeCsvField(baseData.projectUpdatedAt),
           escapeCsvField(baseData.planId),
           escapeCsvField(baseData.planName),
           escapeCsvField(baseData.planFileName),
@@ -477,6 +493,17 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         const previews = newZip.folder("pin_previews");
         const csvDataLocal = generateCSVFromExportData(exportData);
         newZip.file("project_data.csv", csvDataLocal);
+        // Include a project metadata JSON for easy inspection
+        const metadata = {
+          id: exportData.project.id,
+          name: exportData.project.name,
+          clientName: exportData.project.clientName,
+          engineerName: exportData.project.engineerName,
+          siteVisitNumber: exportData.project.siteVisitNumber,
+          createdAt: exportData.project.createdAt,
+          updatedAt: exportData.project.updatedAt
+        };
+        newZip.file("project_metadata.json", JSON.stringify(metadata, null, 2));
         return { newZip, pdfs, images, previews };
       };
 

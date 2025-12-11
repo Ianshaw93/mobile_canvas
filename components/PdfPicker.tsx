@@ -412,7 +412,7 @@ const PdfPicker = () => {
               <option value="">Select engineer</option>
               <option value="Joana Kruk">Joana Kruk</option>
               <option value="Sam Bennett">Sam Bennett</option>
-              <option value="Thomas O'Driscoll">Thomas O'Driscoll</option>
+              <option value="Thomas O&apos;Driscoll">Thomas O&apos;Driscoll</option>
               <option value="Diana Prostire">Diana Prostire</option>
               <option value="Eoghan O’Meara">Eoghan O’Meara</option>
               <option value="Kevin Kurniawan">Kevin Kurniawan</option>

@@ -9,9 +9,23 @@ export async function convertPdfToGrayscale(base64PdfDataUrl: string): Promise<s
   pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
   const { default: pdfMake } = await import('pdfmake/build/pdfmake');
-  const { default: pdfFonts } = await import('pdfmake/build/vfs_fonts');
+  // Load fonts module; depending on bundler, this may set pdfMake.vfs as a side-effect
+  const fontsModule: any = await import('pdfmake/build/vfs_fonts');
+  // Collect candidates across common export shapes and side-effect
   // @ts-ignore
-  pdfMake.vfs = pdfFonts.pdfMake.vfs;
+  const vfsCandidates = [
+    // Side-effect assignment (most reliable in UMD builds)
+    (pdfMake && pdfMake.vfs),
+    fontsModule?.pdfMake?.vfs,
+    fontsModule?.default?.pdfMake?.vfs,
+    fontsModule?.vfs,
+    fontsModule?.default?.vfs
+  ];
+  // @ts-ignore
+  const resolvedVfs = vfsCandidates.find(Boolean);
+  if (!resolvedVfs) throw new Error('pdfmake vfs not found from vfs_fonts module');
+  // @ts-ignore
+  pdfMake.vfs = resolvedVfs;
 
   // Extract raw base64 if a data URL is provided
   const base64 = base64PdfDataUrl.includes(',')
