@@ -9,6 +9,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import ReportButton from './ReportButton';
 import { sendProjectToBackend } from './ApiCalls';
 import DownloadProjectButton from './DownloadProjectButton';
+import ImportProjectButton from './ImportProjectButton';
 import SupportBundleButton from './SupportBundleButton';
 import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
 import { database } from '@/services/database';
@@ -453,7 +454,10 @@ const PdfPicker = () => {
           <div className="text-green-600 animate-pulse mb-2">
             ↓ Add PDFs to your project here ↓
           </div>
-          <DownloadProjectButton projectId={selectedProjectId} />
+          <div className="flex gap-2">
+            <DownloadProjectButton projectId={selectedProjectId} />
+            <ImportProjectButton />
+          </div>
           <SupportBundleButton />
         </div>
       )}
