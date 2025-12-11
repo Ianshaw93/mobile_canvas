@@ -386,7 +386,7 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
     console.log(`[Import] Plans to match:`, Array.from(plans.values()).map(p => p.plan.name).slice(0, 5));
     
     // First, process PDFs that have CSV data
-    for (const [planId, planData] of plans.entries()) {
+    for (const [planId, planData] of Array.from(plans.entries())) {
       // Try multiple matching strategies in priority order:
       // 1. PRIMARY: Match by CSV Plan Name column + .pdf (how export actually saves it)
       const planNameTrimmed = planData.plan.name.trim();
@@ -547,8 +547,8 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
   const imageFiles = new Map<string, Uint8Array>();
   const imagesFolder = zip.folder('images');
   if (imagesFolder) {
-    for (const [planId, planData] of plans.entries()) {
-      for (const [pointId, pointData] of planData.points.entries()) {
+    for (const [planId, planData] of Array.from(plans.entries())) {
+      for (const [pointId, pointData] of Array.from(planData.points.entries())) {
         for (const img of pointData.images) {
           const imgFile = imagesFolder.file(img.fileName);
           if (imgFile) {
@@ -592,7 +592,7 @@ export async function previewImport(bytes: Uint8Array): Promise<ImportPreview> {
   let totalPoints = 0;
   let totalImages = 0;
 
-  for (const [planId, planData] of parsed.plans.entries()) {
+  for (const [planId, planData] of Array.from(parsed.plans.entries())) {
     const pointCount = planData.points.size;
     const imageCount = Array.from(planData.points.values()).reduce(
       (sum, pt) => sum + pt.images.length, 0
@@ -612,7 +612,7 @@ export async function previewImport(bytes: Uint8Array): Promise<ImportPreview> {
   }
 
   const warnings: string[] = [];
-  for (const [planId, planData] of parsed.plans.entries()) {
+  for (const [planId, planData] of Array.from(parsed.plans.entries())) {
     if (!parsed.pdfFiles.has(planId)) {
       warnings.push(`Plan "${planData.plan.name}" is missing its PDF file`);
     }
