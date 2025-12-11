@@ -184,35 +184,62 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
   };
 
   const lines = csvContent.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) {
-    // Try to get more info about what we have
-    console.error('CSV parsing failed. Lines found:', lines.length);
-    console.error('First few lines:', lines.slice(0, 5));
-    throw new Error(`Invalid CSV: no data rows found (found ${lines.length} lines total)`);
-  }
-
-  const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
   
-  // Find column indices
+  // Allow CSV with just headers (no data rows) if we have PDFs - this handles projects with zero pins
+  let hasHeaders = false;
+  let headers: string[] = [];
+  
+  if (lines.length >= 1) {
+    headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+    hasHeaders = headers.length > 0;
+  }
+  
+  // If CSV has no headers, that's a problem (unless we can get project info from metadata)
+  if (!hasHeaders && lines.length === 0) {
+    throw new Error(`Invalid CSV: file appears to be empty`);
+  }
+  
+  // Find column indices (only needed if we have headers)
   const colIndex = (name: string) => {
+    if (headers.length === 0) return -1;
     const idx = headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
-    if (idx === -1) throw new Error(`Missing required column: ${name}`);
     return idx;
   };
 
   const getCol = (row: string[], name: string): string => {
     const idx = colIndex(name);
+    if (idx === -1) return '';
     const val = row[idx]?.replace(/^"|"$/g, '') || '';
     return val;
   };
 
-  // Extract unique project info from first row
-  const firstRow = parseCSVLine(lines[1]);
-  const projectId = getCol(firstRow, 'Project ID');
-  const projectName = getCol(firstRow, 'Project Name');
-  const clientName = getCol(firstRow, 'Client Name') || '';
-  const engineerName = getCol(firstRow, 'Engineer Name') || '';
-  const siteVisitNumber = parseInt(getCol(firstRow, 'Site Visit Number') || '1', 10) || 1;
+  // Extract unique project info from first data row (if available) or metadata
+  let projectId = '';
+  let projectName = '';
+  let clientName = '';
+  let engineerName = '';
+  let siteVisitNumber = 1;
+  
+  if (lines.length >= 2) {
+    // We have data rows, extract from CSV
+    const firstRow = parseCSVLine(lines[1]);
+    projectId = getCol(firstRow, 'Project ID');
+    projectName = getCol(firstRow, 'Project Name');
+    clientName = getCol(firstRow, 'Client Name') || '';
+    engineerName = getCol(firstRow, 'Engineer Name') || '';
+    siteVisitNumber = parseInt(getCol(firstRow, 'Site Visit Number') || '1', 10) || 1;
+  } else if (projectMetadata) {
+    // No data rows, try to get from metadata
+    projectId = projectMetadata.id || `proj_${Date.now()}`;
+    projectName = projectMetadata.name || 'Imported Project';
+    clientName = projectMetadata.clientName || '';
+    engineerName = projectMetadata.engineerName || '';
+    siteVisitNumber = projectMetadata.siteVisitNumber || 1;
+  } else {
+    // No data and no metadata - use defaults
+    projectId = `proj_${Date.now()}`;
+    projectName = 'Imported Project';
+  }
   
   // Parse dates from metadata or use current time
   let createdAt = Date.now();
@@ -255,9 +282,10 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
     }>;
   }>();
 
-  // Process CSV rows
+  // Process CSV rows (only if we have data rows)
   let dataRowCount = 0;
-  for (let i = 1; i < lines.length; i++) {
+  if (lines.length >= 2 && headers.length > 0) {
+    for (let i = 1; i < lines.length; i++) {
     const row = parseCSVLine(lines[i]);
     // Skip empty rows or rows with too few columns
     if (row.length === 0 || row.every(cell => !cell.trim())) continue;
@@ -267,9 +295,9 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
     }
     dataRowCount++;
 
-    const planId = getCol(row, 'Plan ID');
-    const planName = getCol(row, 'Plan Name');
-    const planFileName = getCol(row, 'Plan File Name');
+    const planId = getCol(row, 'Plan ID').trim();
+    const planName = getCol(row, 'Plan Name').trim();
+    const planFileName = getCol(row, 'Plan File Name').trim();
     const planWidth = parseFloat(getCol(row, 'Plan Width')) || 0;
     const planHeight = parseFloat(getCol(row, 'Plan Height')) || 0;
     const pointId = getCol(row, 'Point ID');
@@ -320,45 +348,114 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
         comment: imageComment
       });
     }
-  }
-
-  if (dataRowCount === 0) {
-    throw new Error(`Invalid CSV: no valid data rows found after parsing (processed ${lines.length - 1} lines)`);
-  }
+    }
+  } // End of CSV row processing
 
   // Load PDF files
   const pdfFiles = new Map<string, Uint8Array>();
   const pdfsFolder = zip.folder('pdfs');
+  const processedPdfNames = new Set<string>(); // Track which PDFs we've matched to plans
+  
   if (pdfsFolder) {
     // Get all PDF files in the folder
-    const allPdfFiles = Object.keys(pdfsFolder.files).filter(f => 
+    // JSZip file paths might include "pdfs/" prefix - we need to normalize
+    const allPdfFilesRaw = Object.keys(pdfsFolder.files).filter(f => 
       f.toLowerCase().endsWith('.pdf') && !pdfsFolder.files[f].dir
     );
     
+    // Normalize paths - remove "pdfs/" prefix if present
+    const normalizePdfPath = (path: string): string => {
+      return path.replace(/^pdfs[\/\\]/i, '').replace(/^pdfs/i, '');
+    };
+    
+    // Create a map of normalized paths to original paths for lookup
+    const pdfPathMap = new Map<string, string>();
+    for (const rawPath of allPdfFilesRaw) {
+      const normalized = normalizePdfPath(rawPath);
+      pdfPathMap.set(normalized.toLowerCase(), rawPath);
+    }
+    
+    const allPdfFilesNormalized = Array.from(pdfPathMap.keys());
+    
+    // Debug: Log what we found
+    console.log(`[Import] Found ${allPdfFilesRaw.length} PDFs in pdfs folder`);
+    if (allPdfFilesRaw.length > 0) {
+      console.log(`[Import] Sample PDFs (raw):`, allPdfFilesRaw.slice(0, 3));
+      console.log(`[Import] Sample PDFs (normalized):`, allPdfFilesNormalized.slice(0, 3));
+    }
+    console.log(`[Import] Plans to match:`, Array.from(plans.values()).map(p => p.plan.name).slice(0, 5));
+    
+    // First, process PDFs that have CSV data
     for (const [planId, planData] of plans.entries()) {
-      // Try multiple matching strategies:
-      // 1. Exact match from CSV Plan File Name
+      // Try multiple matching strategies in priority order:
+      // 1. PRIMARY: Match by CSV Plan Name column + .pdf (how export actually saves it)
+      const planNameTrimmed = planData.plan.name.trim();
+      const planNameFileName = `${planNameTrimmed}.pdf`;
+      // 2. Match by CSV Plan File Name column + .pdf
       const csvFileName = `${planData.plan.fileName}.pdf`;
-      // 2. Match by actual plan name (how export saves it)
-      const planNameFileName = `${planData.plan.name}.pdf`;
       // 3. Match by sanitized plan name (fallback)
       const sanitizedFileName = `plan_${planData.plan.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
       
-      let pdfFile = pdfsFolder.file(csvFileName) || 
-                    pdfsFolder.file(planNameFileName) ||
-                    pdfsFolder.file(sanitizedFileName);
+      console.log(`[Import] Looking for PDF for plan "${planData.plan.name}":`, {
+        planNameFileName,
+        csvFileName,
+        sanitizedFileName
+      });
       
-      // If still not found, try fuzzy matching by name
+      // Normalize filenames for case-insensitive matching
+      const planNameLower = planNameFileName.toLowerCase();
+      const csvFileNameLower = csvFileName.toLowerCase();
+      const sanitizedFileNameLower = sanitizedFileName.toLowerCase();
+      
+      // Try exact matches first (case-insensitive) - use normalized paths
+      let matchedFileName: string | undefined = undefined;
+      for (const normalizedPath of allPdfFilesNormalized) {
+        if (normalizedPath === planNameLower || 
+            normalizedPath === csvFileNameLower || 
+            normalizedPath === sanitizedFileNameLower) {
+          // Get the original path from the map
+          matchedFileName = pdfPathMap.get(normalizedPath);
+          console.log(`[Import] ✅ Exact match found: "${matchedFileName}" (normalized: "${normalizedPath}") for plan "${planData.plan.name}"`);
+          break;
+        }
+      }
+      
+      // Access file using the normalized filename (without prefix)
+      let pdfFile = matchedFileName ? pdfsFolder.file(normalizePdfPath(matchedFileName)) : null;
+      
+      // If still not found, try fuzzy matching by name (more lenient)
       if (!pdfFile) {
-        const matchingFile = allPdfFiles.find(f => {
-          const fileName = f.toLowerCase();
-          const planNameLower = planData.plan.name.toLowerCase();
-          // Check if filename contains plan name or vice versa
-          return fileName.includes(planNameLower) || planNameLower.includes(fileName.replace('.pdf', ''));
+        const planNameClean = planData.plan.name.toLowerCase().trim();
+        const matchingNormalized = allPdfFilesNormalized.find(normalizedPath => {
+          const fileName = normalizedPath.replace('.pdf', '').trim();
+          const fileNameClean = fileName.replace(/[^a-z0-9]/gi, '');
+          const planNameCleanOnly = planNameClean.replace(/[^a-z0-9]/gi, '');
+          
+          // Check multiple fuzzy strategies:
+          // 1. Exact match (case-insensitive, ignoring special chars)
+          if (fileNameClean === planNameCleanOnly) {
+            console.log(`[Import] ✅ Fuzzy match (clean): "${normalizedPath}" for plan "${planData.plan.name}"`);
+            return true;
+          }
+          
+          // 2. Filename contains plan name or vice versa
+          if (fileName.includes(planNameClean) || planNameClean.includes(fileName)) {
+            console.log(`[Import] ✅ Fuzzy match (contains): "${normalizedPath}" for plan "${planData.plan.name}"`);
+            return true;
+          }
+          
+          // 3. Plan name contains filename or vice versa (ignoring special chars)
+          if (fileNameClean.includes(planNameCleanOnly) || planNameCleanOnly.includes(fileNameClean)) {
+            console.log(`[Import] ✅ Fuzzy match (clean contains): "${normalizedPath}" for plan "${planData.plan.name}"`);
+            return true;
+          }
+          
+          return false;
         });
         
-        if (matchingFile) {
-          pdfFile = pdfsFolder.file(matchingFile);
+        if (matchingNormalized) {
+          // Use normalized path (without prefix) to access the file
+          pdfFile = pdfsFolder.file(matchingNormalized);
         }
       }
       
@@ -366,15 +463,84 @@ export async function parseExportZip(bytes: Uint8Array): Promise<ParsedImportDat
         try {
           const pdfData = await pdfFile.async('uint8array');
           pdfFiles.set(planId, pdfData);
+          // Track which PDF filename was matched
+          const matchedFileName = pdfFile.name.split('/').pop() || pdfFile.name;
+          processedPdfNames.add(matchedFileName.toLowerCase());
+          console.log(`✅ Matched PDF for plan "${planData.plan.name}": ${matchedFileName}`);
         } catch (e) {
           warnings.push(`Could not load PDF for plan ${planData.plan.name}: ${e}`);
         }
       } else {
-        warnings.push(`PDF not found for plan "${planData.plan.name}" (tried: ${csvFileName}, ${planNameFileName}, ${sanitizedFileName})`);
+        // Log all available PDFs for debugging
+        const availablePdfs = allPdfFilesNormalized.slice(0, 10).join(', ');
+        warnings.push(`PDF not found for plan "${planData.plan.name}" (tried: ${planNameFileName}, ${csvFileName}, ${sanitizedFileName}). Available PDFs: ${availablePdfs}${allPdfFilesNormalized.length > 10 ? '...' : ''}`);
+      }
+    }
+    
+    // Now check for PDFs that don't have CSV data (plans without pins)
+    for (const pdfFileName of allPdfFilesNormalized) {
+      const fileNameLower = pdfFileName.toLowerCase();
+      // Skip if already processed or if it's an overview PNG (not a PDF)
+      if (processedPdfNames.has(fileNameLower) || !fileNameLower.endsWith('.pdf')) {
+        continue;
+      }
+      
+      // Extract plan name from filename (remove .pdf extension)
+      const planName = pdfFileName.replace(/\.pdf$/i, '').trim();
+      if (!planName) continue;
+      
+      // Create a plan entry for this PDF (no points)
+      const orphanPlanId = `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      plans.set(orphanPlanId, {
+        plan: {
+          id: orphanPlanId,
+          name: planName,
+          fileName: planName,
+          width: 0, // Will be determined when PDF is loaded
+          height: 0,
+          displayScale: 1.5
+        },
+        points: new Map() // No points
+      });
+      
+      // Load the PDF (pdfFileName is already normalized, so use it directly)
+      const pdfFile = pdfsFolder.file(pdfFileName);
+      if (pdfFile) {
+        try {
+          const pdfData = await pdfFile.async('uint8array');
+          pdfFiles.set(orphanPlanId, pdfData);
+          processedPdfNames.add(fileNameLower);
+          
+          // Try to get dimensions from PDF if possible
+          try {
+            // @ts-ignore
+            const pdfjs = await import('pdfjs-dist/build/pdf');
+            // @ts-ignore
+            pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+            // @ts-ignore
+            const loadingTask = pdfjs.getDocument({ data: pdfData.buffer });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 1.0 });
+            const planData = plans.get(orphanPlanId)!;
+            planData.plan.width = viewport.width;
+            planData.plan.height = viewport.height;
+          } catch (e) {
+            // If we can't get dimensions, keep defaults (0, 0)
+            console.warn(`Could not extract dimensions from PDF ${planName}:`, e);
+          }
+        } catch (e) {
+          warnings.push(`Could not load orphan PDF ${planName}: ${e}`);
+        }
       }
     }
   } else {
     warnings.push('PDFs folder not found in zip file');
+  }
+  
+  // Only throw error if we have no plans at all (neither from CSV nor from orphan PDFs)
+  if (plans.size === 0) {
+    throw new Error(`Invalid CSV: no valid data rows found after parsing (processed ${lines.length - 1} lines) and no PDFs found in pdfs folder`);
   }
 
   // Load image files
@@ -528,6 +694,7 @@ export async function applyImport(
     onProgress?.(`Processing plan: ${planData.plan.name}...`, progress);
 
     let targetPlanId: string;
+    let isMergingIntoExistingPlan = false;
 
     if (strategy.type === 'merge' && strategy.planMatching === 'match-by-name') {
       // Try to find existing plan by name
@@ -539,6 +706,7 @@ export async function applyImport(
         // Merge into existing plan
         targetPlanId = matchingPlan.id;
         planMapping.set(importedPlanId, targetPlanId);
+        isMergingIntoExistingPlan = true;
         onProgress?.(`Merging into existing plan: ${planData.plan.name}...`, progress);
       } else {
         // Create new plan
@@ -555,27 +723,79 @@ export async function applyImport(
       plansCreated++;
     }
 
+    // Get existing points for this plan if merging (to check for duplicates)
+    const existingPoints = isMergingIntoExistingPlan 
+      ? await database.getPointsByPlan(targetPlanId)
+      : [];
+    
+    // Tolerance for matching points by location (in pixels)
+    const LOCATION_TOLERANCE = 5; // Points within 5 pixels are considered the same location
+
     // Process points and images
     const pointEntries = Array.from(planData.points.entries());
-    for (const [pointId, pointData] of pointEntries) {
-      // Always create new point (merge means adding points to existing plan)
-      const newPointId = uuidv4();
-      
-      const dbPoint: DBPoint = {
-        id: newPointId,
-        plan_id: targetPlanId,
-        x: pointData.point.x,
-        y: pointData.point.y,
-        status: pointData.point.status,
-        comment: pointData.point.comment,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+    for (const [importedPointId, pointData] of pointEntries) {
+      let targetPointId: string;
+      let pointWasCreated = false;
 
-      await database.createPoint(dbPoint);
-      pointsCreated++;
+      // If merging into existing plan, try to match the point
+      if (isMergingIntoExistingPlan) {
+        // Strategy 1: Match by Point ID (same pin, same ID)
+        let existingPoint = existingPoints.find(p => p.id === importedPointId);
+        
+        if (existingPoint) {
+          // Found by ID - this is the same pin
+          targetPointId = existingPoint.id;
+          console.log(`[Import] Matched point by ID "${importedPointId}" at (${pointData.point.x}, ${pointData.point.y})`);
+        } else {
+          // Strategy 2: Match by location (same location, might be same pin moved or ID changed)
+          existingPoint = existingPoints.find(p => {
+            const dx = Math.abs(p.x - pointData.point.x);
+            const dy = Math.abs(p.y - pointData.point.y);
+            return dx <= LOCATION_TOLERANCE && dy <= LOCATION_TOLERANCE;
+          });
 
-      // Process images
+          if (existingPoint) {
+            // Found by location - merge images into existing point
+            targetPointId = existingPoint.id;
+            console.log(`[Import] Matched point by location at (${pointData.point.x}, ${pointData.point.y}) - merging into existing point "${existingPoint.id}"`);
+          } else {
+            // No match - create new point (restoring deleted pin or adding new one)
+            targetPointId = uuidv4();
+            const dbPoint: DBPoint = {
+              id: targetPointId,
+              plan_id: targetPlanId,
+              x: pointData.point.x,
+              y: pointData.point.y,
+              status: pointData.point.status,
+              comment: pointData.point.comment,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            await database.createPoint(dbPoint);
+            pointsCreated++;
+            pointWasCreated = true;
+            console.log(`[Import] Created new point at (${pointData.point.x}, ${pointData.point.y}) - restoring deleted pin`);
+          }
+        }
+      } else {
+        // Always create new point (new plan or create-new strategy)
+        targetPointId = uuidv4();
+        const dbPoint: DBPoint = {
+          id: targetPointId,
+          plan_id: targetPlanId,
+          x: pointData.point.x,
+          y: pointData.point.y,
+          status: pointData.point.status,
+          comment: pointData.point.comment,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        await database.createPoint(dbPoint);
+        pointsCreated++;
+        pointWasCreated = true;
+      }
+
+      // Process images - always add them (they'll be added to existing point if merging)
       for (const img of pointData.images) {
         const imageData = parsed.imageFiles.get(img.fileName);
         if (imageData) {
@@ -594,7 +814,7 @@ export async function applyImport(
 
           const dbImage: DBImage = {
             id: imageId,
-            point_id: newPointId,
+            point_id: targetPointId,
             url: imageId, // Store filename as URL (consistent with current pattern)
             comment: img.comment,
             created_at: new Date().toISOString(),
