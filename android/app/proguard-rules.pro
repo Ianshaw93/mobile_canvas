@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep ContentUriReaderPlugin to prevent it from being stripped by ProGuard/R8
+-keep class com.example.app.ContentUriReaderPlugin { *; }
+-keepclassmembers class com.example.app.ContentUriReaderPlugin { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class com.example.app.ContentUriReaderPlugin { *; }

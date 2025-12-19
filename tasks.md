@@ -183,6 +183,113 @@ Goal: Eliminate WebView OOM during project export while preserving current UX. S
 - `hooks/usePDF.ts` (if needed) – enable toBlob rendering helpers.
 - `services/exportNative.ts` (new, optional) – native zip fallback implementation.
 
+---
+
+# Large Import File Reading Fix (High-Level Tasks)
+
+Goal: Fix import functionality to handle large zip files (45MB+) without crashing due to memory issues. FilePicker returns `content://` URIs on Android which capacitor-file-chunk cannot read directly.
+
+## Problem Analysis
+
+**Current Issue**:
+- Import gets stuck at 10% progress and app crashes/closes
+- FilePicker returns `content://` URI on Android (from document picker)
+- `capacitor-file-chunk` plugin doesn't support `content://` URIs - only `file://` paths
+- `Filesystem.readFile()` can read `content://` URIs but loads entire file into memory (crashes on 45MB+ files)
+
+**Root Cause**:
+- `FileChunk.readFileChunk()` fails when given a `content://` URI
+- App crashes when trying to read large files directly from content URI
+- No chunked reading available for content URIs in Capacitor 6.x
+
+## Import Tasks (In Progress)
+
+- [ ] **I1: Copy file from content:// URI to app storage**
+  - **Problem**: FilePicker returns `content://` URI, but FileChunk needs `file://` path
+  - **Solution**: Copy file from content URI to app storage (`Directory.Data`) first
+  - **Steps**:
+    1. Read entire file from `content://` URI using `Filesystem.readFile()` (one-time memory hit)
+    2. Write file to app storage using `Filesystem.writeFile()` with unique temp filename
+    3. Get file path in app storage (will be `file://` format)
+    4. Read from app storage in chunks using `FileChunk.readFileChunk()`
+    5. Clean up temp file after reading completes
+  - **Risk**: Copy step may still crash on very large files, but allows chunked reading afterward
+  - **Files Modified**: `components/ImportProjectButton.tsx`
+
+- [ ] **I2: Implement chunked reading from app storage**
+  - Use `FileChunk.startServer()` to start chunk server
+  - Read file from app storage in 1MB chunks using `FileChunk.readFileChunk()`
+  - Build `Uint8Array` incrementally as chunks are read
+  - Update progress bar during chunked read (10% → 20%)
+  - Yield to UI thread between chunks to keep UI responsive
+  - Combine chunks into final `Uint8Array` for JSZip
+  - **Files Modified**: `components/ImportProjectButton.tsx`
+
+- [ ] **I3: Add error handling and fallback**
+  - Catch errors during file copy operation
+  - Catch errors during chunked read
+  - Fallback to direct `Filesystem.readFile()` if chunked read fails (with warning)
+  - Clean up temp files on error
+  - Provide clear error messages to user
+  - **Files Modified**: `components/ImportProjectButton.tsx`
+
+- [ ] **I4: Test with large files**
+  - Test with 45MB zip file (current failing case)
+  - Test with smaller files (< 10MB) to ensure no regression
+  - Test on Android device (content:// URI scenario)
+  - Verify memory usage doesn't spike
+  - Verify app doesn't crash during import
+  - **Files Modified**: Testing only
+
+## Implementation Strategy
+
+**Phase 1**: Copy file to app storage
+- Read from `content://` URI → Write to app storage
+- Generate unique temp filename (timestamp-based)
+- Handle errors during copy
+
+**Phase 2**: Chunked read from app storage  
+- Start FileChunk server
+- Read file in 1MB chunks
+- Build Uint8Array incrementally
+- Update progress during read
+
+**Phase 3**: Cleanup and error handling
+- Stop FileChunk server
+- Delete temp file after successful read
+- Clean up on errors
+- Provide user feedback
+
+## Acceptance Criteria
+
+- Large zip files (45MB+) can be imported without app crash
+- Progress bar shows real progress during file reading
+- UI remains responsive during import process
+- Temp files are cleaned up after import (success or failure)
+- Clear error messages if import fails
+- Works on Android with content:// URIs from FilePicker
+
+## Impacted Files
+
+- `components/ImportProjectButton.tsx` – file copy logic, chunked reading, error handling
+- `android/app/build.gradle` – already updated with libsodium dependency for capacitor-file-chunk
+
+## Technical Details
+
+**Dependencies**:
+- `capacitor-file-chunk@2.0.0` – already installed
+- `@capacitor/filesystem@6.0.1` – already installed
+- `@capawesome/capacitor-file-picker@6.2.0` – already installed
+
+**Known Limitations**:
+- Copy step requires loading entire file into memory once (may crash on extremely large files >100MB)
+- FileChunk server must be started/stopped properly
+- Temp file cleanup is critical to avoid storage issues
+
+**Future Improvements**:
+- If Capacitor 7+ is upgraded, use `Filesystem.readFileInChunks()` instead
+- Consider native file copy plugin for true zero-copy operation
+
 ## Implementation Strategy
 
 **Phase 1 (Critical)**: Core SQL-on-demand lifecycle ✅ COMPLETE
