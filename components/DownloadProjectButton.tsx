@@ -494,6 +494,21 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         const csvDataLocal = generateCSVFromExportData(exportData);
         newZip.file("project_data.csv", csvDataLocal);
         // Include a project metadata JSON for easy inspection
+        // Include all plans (with and without points) for reliable import
+        const plansMetadata = exportData.plans.map((planData: any) => {
+          const plan = planData.plan;
+          const planFileName = plan.name || plan.id;
+          return {
+            id: plan.id,
+            name: plan.name || '',
+            fileName: `${planFileName}.pdf`,
+            width: plan.dimensions?.width || 0,
+            height: plan.dimensions?.height || 0,
+            displayScale: plan.dimensions?.displayScale || 1.5,
+            hasPoints: planData.points && planData.points.length > 0
+          };
+        });
+        
         const metadata = {
           id: exportData.project.id,
           name: exportData.project.name,
@@ -501,7 +516,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           engineerName: exportData.project.engineerName,
           siteVisitNumber: exportData.project.siteVisitNumber,
           createdAt: exportData.project.createdAt,
-          updatedAt: exportData.project.updatedAt
+          updatedAt: exportData.project.updatedAt,
+          plans: plansMetadata
         };
         newZip.file("project_metadata.json", JSON.stringify(metadata, null, 2));
         return { newZip, pdfs, images, previews };
