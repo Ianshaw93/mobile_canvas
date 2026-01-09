@@ -22,6 +22,7 @@ export interface DBPlan {
   height: number;
   display_scale: number;
   display_order: number;
+  site_visit_number?: number;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,7 @@ export interface DBPoint {
   y: number;
   status: 'Open' | 'Closed' | 'Note';
   comment?: string;
+  site_visit_number?: number;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +44,7 @@ export interface DBImage {
   point_id: string;
   url: string;
   comment?: string;
+  site_visit_number?: number;
   created_at: string;
   updated_at: string;
 }
@@ -51,7 +54,7 @@ class Database {
   private static instance: Database;
   private dbConnection: SQLiteDBConnection | null = null;
   private readonly DB_NAME = 'mobile_canvas_db';
-  private readonly DB_VERSION = 5; // Increment for new migrations
+  private readonly DB_VERSION = 6; // Increment for new migrations
   private readonly isNative = Capacitor.isNativePlatform();
 
   private constructor() {}
@@ -139,6 +142,7 @@ class Database {
         height REAL NOT NULL,
         display_scale REAL NOT NULL,
         display_order INTEGER DEFAULT 0,
+        site_visit_number INTEGER DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
@@ -154,6 +158,7 @@ class Database {
         y REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'Open',
         comment TEXT,
+        site_visit_number INTEGER DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (plan_id) REFERENCES plans (id) ON DELETE CASCADE
@@ -167,6 +172,7 @@ class Database {
         point_id TEXT NOT NULL,
         url TEXT NOT NULL,
         comment TEXT,
+        site_visit_number INTEGER DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (point_id) REFERENCES points (id) ON DELETE CASCADE
@@ -230,6 +236,59 @@ class Database {
       if (!hasClientName) {
         console.log('[DB Migration] Adding client_name column to projects table');
         await db.execute("ALTER TABLE projects ADD COLUMN client_name TEXT");
+      }
+
+      // Migration 5: Add site_visit_number to plans, points, and images
+      // Re-query to get fresh schema info
+      const plansInfo2 = await db.query("PRAGMA table_info(plans)");
+      const planHasSiteVisit = plansInfo2.values?.some((column: any) => column.name === 'site_visit_number');
+
+      if (!planHasSiteVisit) {
+        console.log('[DB Migration] Adding site_visit_number to plans, points, and images');
+
+        // Add site_visit_number to plans
+        await db.execute("ALTER TABLE plans ADD COLUMN site_visit_number INTEGER DEFAULT 1");
+
+        // Backfill plans with their project's site_visit_number
+        await db.execute(`
+          UPDATE plans
+          SET site_visit_number = (
+            SELECT COALESCE(projects.site_visit_number, 1)
+            FROM projects
+            WHERE projects.id = plans.project_id
+          )
+        `);
+
+        // Add site_visit_number to points
+        await db.execute("ALTER TABLE points ADD COLUMN site_visit_number INTEGER DEFAULT 1");
+
+        // Backfill points with their parent project's site_visit_number (via plan)
+        await db.execute(`
+          UPDATE points
+          SET site_visit_number = (
+            SELECT COALESCE(projects.site_visit_number, 1)
+            FROM plans
+            INNER JOIN projects ON projects.id = plans.project_id
+            WHERE plans.id = points.plan_id
+          )
+        `);
+
+        // Add site_visit_number to images
+        await db.execute("ALTER TABLE images ADD COLUMN site_visit_number INTEGER DEFAULT 1");
+
+        // Backfill images with their parent project's site_visit_number (via point and plan)
+        await db.execute(`
+          UPDATE images
+          SET site_visit_number = (
+            SELECT COALESCE(projects.site_visit_number, 1)
+            FROM points
+            INNER JOIN plans ON plans.id = points.plan_id
+            INNER JOIN projects ON projects.id = plans.project_id
+            WHERE points.id = images.point_id
+          )
+        `);
+
+        console.log('[DB Migration] Successfully added site_visit_number to plans, points, and images');
       }
     } catch (error) {
       console.error('[DB Migration] Error running migrations:', error);
@@ -297,8 +356,8 @@ class Database {
   async createPlan(plan: DBPlan): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, display_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.display_order, plan.created_at, plan.updated_at]
+      'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, display_order, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.display_order, plan.site_visit_number ?? 1, plan.created_at, plan.updated_at]
     );
   }
 
@@ -341,6 +400,10 @@ class Database {
     if (updates.display_order !== undefined) {
       setClauses.push('display_order = ?');
       values.push(updates.display_order);
+    }
+    if (updates.site_visit_number !== undefined) {
+      setClauses.push('site_visit_number = ?');
+      values.push(updates.site_visit_number);
     }
 
     setClauses.push('updated_at = ?');
@@ -399,8 +462,8 @@ class Database {
   async createPoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO points (id, plan_id, x, y, status, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [point.id, point.plan_id, point.x, point.y, point.status, point.comment || null, point.created_at, point.updated_at]
+      'INSERT INTO points (id, plan_id, x, y, status, comment, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [point.id, point.plan_id, point.x, point.y, point.status, point.comment || null, point.site_visit_number ?? 1, point.created_at, point.updated_at]
     );
   }
 
@@ -419,8 +482,8 @@ class Database {
   async updatePoint(point: DBPoint): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [point.plan_id, point.x, point.y, point.status, point.comment || null, point.updated_at, point.id]
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
+      [point.plan_id, point.x, point.y, point.status, point.comment || null, point.site_visit_number ?? 1, point.updated_at, point.id]
     );
   }
 
@@ -441,8 +504,8 @@ class Database {
     };
 
     await db.run(
-      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.status, updatedPoint.comment || null, updatedPoint.updated_at, id]
+      'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
+      [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.status, updatedPoint.comment || null, updatedPoint.site_visit_number ?? 1, updatedPoint.updated_at, id]
     );
   }
 
@@ -455,8 +518,8 @@ class Database {
   async createImage(image: DBImage): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'INSERT INTO images (id, point_id, url, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [image.id, image.point_id, image.url, image.comment || null, image.created_at, image.updated_at]
+      'INSERT INTO images (id, point_id, url, comment, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [image.id, image.point_id, image.url, image.comment || null, image.site_visit_number ?? 1, image.created_at, image.updated_at]
     );
   }
 
@@ -469,14 +532,101 @@ class Database {
   async updateImage(image: DBImage): Promise<void> {
     const db = await this.getDBConnection();
     await db.run(
-      'UPDATE images SET url = ?, comment = ?, updated_at = ? WHERE id = ?',
-      [image.url, image.comment || null, image.updated_at, image.id]
+      'UPDATE images SET url = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
+      [image.url, image.comment || null, image.site_visit_number ?? 1, image.updated_at, image.id]
     );
   }
 
   async deleteImage(id: string): Promise<void> {
     const db = await this.getDBConnection();
     await db.run('DELETE FROM images WHERE id = ?', [id]);
+  }
+
+  // Site visit filtering operations
+  async getPlan(id: string): Promise<DBPlan | undefined> {
+    const db = await this.getDBConnection();
+    const result = await db.query('SELECT * FROM plans WHERE id = ?', [id]);
+    return result.values?.[0] as DBPlan | undefined;
+  }
+
+  async getPlansByProjectAndVisit(projectId: string, siteVisitNumber: number): Promise<DBPlan[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query(
+      'SELECT * FROM plans WHERE project_id = ? AND site_visit_number = ? ORDER BY display_order ASC, created_at ASC',
+      [projectId, siteVisitNumber]
+    );
+    return result.values as DBPlan[] || [];
+  }
+
+  async getPointsByPlanAndVisit(planId: string, siteVisitNumber: number): Promise<DBPoint[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query(
+      'SELECT * FROM points WHERE plan_id = ? AND site_visit_number = ? ORDER BY created_at ASC',
+      [planId, siteVisitNumber]
+    );
+    return result.values as DBPoint[] || [];
+  }
+
+  async getImagesByPointAndVisit(pointId: string, siteVisitNumber: number): Promise<DBImage[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query(
+      'SELECT * FROM images WHERE point_id = ? AND site_visit_number = ? ORDER BY created_at ASC',
+      [pointId, siteVisitNumber]
+    );
+    return result.values as DBImage[] || [];
+  }
+
+  async getAvailableSiteVisits(projectId: string): Promise<number[]> {
+    const db = await this.getDBConnection();
+    const result = await db.query(
+      'SELECT DISTINCT site_visit_number FROM plans WHERE project_id = ? ORDER BY site_visit_number ASC',
+      [projectId]
+    );
+    return (result.values?.map((row: any) => row.site_visit_number) as number[]) || [];
+  }
+
+  // Bulk reassignment operations
+  async reassignPointVisit(pointId: string, newSiteVisitNumber: number): Promise<void> {
+    const db = await this.getDBConnection();
+    const now = new Date().toISOString();
+
+    // Update the point
+    await db.run(
+      'UPDATE points SET site_visit_number = ?, updated_at = ? WHERE id = ?',
+      [newSiteVisitNumber, now, pointId]
+    );
+
+    // Cascade update to all images attached to this point
+    await db.run(
+      'UPDATE images SET site_visit_number = ?, updated_at = ? WHERE point_id = ?',
+      [newSiteVisitNumber, now, pointId]
+    );
+  }
+
+  async reassignMultiplePointsVisit(pointIds: string[], newSiteVisitNumber: number): Promise<void> {
+    const db = await this.getDBConnection();
+    const now = new Date().toISOString();
+
+    for (const pointId of pointIds) {
+      await this.reassignPointVisit(pointId, newSiteVisitNumber);
+    }
+  }
+
+  async reassignPlanVisit(planId: string, newSiteVisitNumber: number): Promise<void> {
+    const db = await this.getDBConnection();
+    const now = new Date().toISOString();
+
+    // Update the plan
+    await db.run(
+      'UPDATE plans SET site_visit_number = ?, updated_at = ? WHERE id = ?',
+      [newSiteVisitNumber, now, planId]
+    );
+
+    // Get all points in this plan and reassign them
+    const points = await this.getPointsByPlan(planId);
+    for (const point of points) {
+      await this.reassignPointVisit(point.id, newSiteVisitNumber);
+    }
   }
 }
 

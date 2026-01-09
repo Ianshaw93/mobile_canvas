@@ -15,6 +15,17 @@ The app now has a complete SQL-on-demand architecture that solves both memory cr
 
 **Remaining Work**: Only 2 essential polish tasks for production robustness (error handling, edge cases, testing)
 
+## 🧪 Development Standards
+
+**Testing Policy**: For all new features and changes:
+- ✅ **Test During Development**: Create and run tests as each feature is being developed, not after
+- ✅ **Test Each Increment**: Test functionality at regular intervals to catch issues early
+- ✅ **Document Test Cases**: Record what was tested and the results
+- ✅ **Verify Core Flows**: Ensure the feature works end-to-end before moving to the next task
+- ✅ **Test on Device**: All features must be tested on actual device/emulator, not just in browser
+
+**Why Test Early**: Testing during development (not after) catches bugs when context is fresh, prevents compound issues, and ensures features work correctly before building on top of them.
+
 ## Problem Analysis
 
 **Reference Branch Issues**:

@@ -456,10 +456,20 @@ const useSiteStore = create<SiteState>((set, get) => ({
   // Pin operations
   addPoint: async (planId: string, point: Point) => {
     console.log('[Store] Adding point:', { planId, point });
-    
+
     try {
       // ✅ Save to SQL database FIRST
       if (Capacitor.isNativePlatform()) {
+        // Get plan to find project_id, then get project's site visit number
+        const plan = await database.getPlan(planId);
+
+        if (!plan) {
+          throw new Error(`Plan not found: ${planId}`);
+        }
+
+        const project = await database.getProject(plan.project_id);
+        const siteVisitNumber = project?.site_visit_number ?? 1;
+
         await database.createPoint({
           id: point.id,
           plan_id: planId,
@@ -467,6 +477,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
           y: point.y,
           status: point.status ?? 'Open',
           comment: point.comment,
+          site_visit_number: siteVisitNumber,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -559,14 +570,25 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addImageToPin: async (planId: string, pointId: string, image: Image) => {
     console.log('📍 Store addImageToPin called:', { planId, pointId, image });
-    
+
     try {
       if (Capacitor.isNativePlatform()) {
+        // Get plan to find project_id, then get project's site visit number
+        const plan = await database.getPlan(planId);
+
+        if (!plan) {
+          throw new Error(`Plan not found: ${planId}`);
+        }
+
+        const project = await database.getProject(plan.project_id);
+        const siteVisitNumber = project?.site_visit_number ?? 1;
+
         await database.createImage({
           id: image.key,
           point_id: pointId,
           url: image.url,
           comment: image.comment || '',
+          site_visit_number: siteVisitNumber,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -1073,7 +1095,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addPlan: async (projectId: string, plan: Plan) => {
     console.log('[Store] Adding plan:', { projectId, plan });
-    
+
     try {
       // ✅ Save to SQL database FIRST
       if (Capacitor.isNativePlatform()) {
@@ -1081,7 +1103,11 @@ const useSiteStore = create<SiteState>((set, get) => ({
         const existingPlans = await database.getPlansByProject(projectId);
         const maxOrder = existingPlans.reduce((max, p) => Math.max(max, p.display_order), 0);
         const nextOrder = maxOrder + 10; // Use gaps for easy reordering
-        
+
+        // Get project's current site visit number
+        const project = await database.getProject(projectId);
+        const siteVisitNumber = project?.site_visit_number ?? 1;
+
         await database.createPlan({
           id: plan.id,
           project_id: projectId,
@@ -1092,6 +1118,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
           height: plan.dimensions.height,
           display_scale: plan.dimensions.displayScale,
           display_order: nextOrder,
+          site_visit_number: siteVisitNumber,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
