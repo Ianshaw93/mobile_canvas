@@ -343,8 +343,8 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
   const generateCSVFromExportData = (exportData: any) => {
     const headers = [
       'Project ID', 'Project Name', 'Client Name', 'Engineer Name', 'Site Visit Number', 'Project Created At', 'Project Updated At',
-      'Plan ID', 'Plan Name', 'Plan File Name',
-      'Plan Width', 'Plan Height', 'Point ID', 'Point X (Normalized)', 'Point Y (Normalized)',
+      'Plan ID', 'Plan Name', 'Plan File Name', 'Plan Site Visit Number',
+      'Plan Width', 'Plan Height', 'Point ID', 'Point Site Visit Number', 'Point X (Normalized)', 'Point Y (Normalized)',
       'Point X (Original)', 'Point Y (Original)', 'Point Comment', 'Point Status', 'Image File Name',
       'Image Comment', 'Timestamp'
     ];
@@ -371,9 +371,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           planId: plan.id,
           planName: plan.name || '',
           planFileName,
+          planSiteVisitNumber: plan.siteVisitNumber ?? 1,
           planWidth,
           planHeight,
           pointId: point.id,
+          pointSiteVisitNumber: point.siteVisitNumber ?? 1,
           normalizedX: normalizedX.toFixed(5),
           normalizedY: normalizedY.toFixed(5),
           originalX: point.x.toFixed(2),
@@ -402,9 +404,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
             escapeCsvField(baseData.planId),
             escapeCsvField(baseData.planName),
             escapeCsvField(baseData.planFileName),
+            escapeCsvField(baseData.planSiteVisitNumber),
             escapeCsvField(baseData.planWidth),
             escapeCsvField(baseData.planHeight),
             escapeCsvField(baseData.pointId),
+            escapeCsvField(baseData.pointSiteVisitNumber),
             escapeCsvField(baseData.normalizedX),
             escapeCsvField(baseData.normalizedY),
             escapeCsvField(baseData.originalX),
@@ -428,9 +432,11 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
           escapeCsvField(baseData.planId),
           escapeCsvField(baseData.planName),
           escapeCsvField(baseData.planFileName),
+          escapeCsvField(baseData.planSiteVisitNumber),
           escapeCsvField(baseData.planWidth),
           escapeCsvField(baseData.planHeight),
           escapeCsvField(baseData.pointId),
+          escapeCsvField(baseData.pointSiteVisitNumber),
           escapeCsvField(baseData.normalizedX),
           escapeCsvField(baseData.normalizedY),
           escapeCsvField(baseData.originalX),
@@ -505,6 +511,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
             width: plan.dimensions?.width || 0,
             height: plan.dimensions?.height || 0,
             displayScale: plan.dimensions?.displayScale || 1.5,
+            siteVisitNumber: plan.siteVisitNumber || 1,
             hasPoints: planData.points && planData.points.length > 0
           };
         });

@@ -48,7 +48,14 @@ function CanvasComponent({pdfId}) {
     currentPlan: selectedProject?.plans.find((plan) => plan.id === pdfId)
   }), [selectedProject, pdfId]);
   const addPoint = useSiteStore((state) => state.addPoint);
-  const points = useMemo(() => currentPlan?.points || [], [currentPlan]);
+  const currentSiteVisit = selectedProject?.siteVisitNumber ?? 1;
+  // Filter pins by current site visit - plans are shared across visits but pins are visit-specific
+  const points = useMemo(() => {
+    const allPoints = currentPlan?.points || [];
+    return allPoints.filter((pt: any) =>
+      (pt.siteVisitNumber || pt.site_visit_number || 1) === currentSiteVisit
+    );
+  }, [currentPlan, currentSiteVisit]);
   const pdfLoaded = useSiteStore((state) => state.pdfLoaded);
   const [startHoldTime, setStartHoldTime] = useState<number|null>(null);
   const [pointerIsUp, setPointerIsUp] = useState<boolean>(true);

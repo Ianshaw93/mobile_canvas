@@ -41,6 +41,7 @@ export interface Point {
   status: 'Open' | 'Closed' | 'Note';
   comment?: string;
   images: Image[];
+  siteVisitNumber?: number; // Site visit this pin belongs to
 }
 
 export interface Image {
@@ -50,6 +51,7 @@ export interface Image {
   pointIndex: number;
   projectId: string;
   planId: string;
+  siteVisitNumber?: number; // Site visit this image belongs to
 }
 
 export type RenderableContent = {
@@ -71,6 +73,7 @@ export interface Plan {
   images: any[];
   planId: string;
   projectId: string;
+  siteVisitNumber?: number; // Site visit this plan belongs to
 }
 
 type FileQueueItem = {

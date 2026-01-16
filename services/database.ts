@@ -578,11 +578,49 @@ class Database {
 
   async getAvailableSiteVisits(projectId: string): Promise<number[]> {
     const db = await this.getDBConnection();
-    const result = await db.query(
-      'SELECT DISTINCT site_visit_number FROM plans WHERE project_id = ? ORDER BY site_visit_number ASC',
+
+    // Get visits from plans
+    const planResult = await db.query(
+      'SELECT DISTINCT site_visit_number FROM plans WHERE project_id = ? AND site_visit_number IS NOT NULL',
       [projectId]
     );
-    return (result.values?.map((row: any) => row.site_visit_number) as number[]) || [];
+
+    // Get visits from points (since plans are shared but pins are visit-specific)
+    const pointResult = await db.query(
+      `SELECT DISTINCT p.site_visit_number
+       FROM points p
+       INNER JOIN plans pl ON p.plan_id = pl.id
+       WHERE pl.project_id = ? AND p.site_visit_number IS NOT NULL`,
+      [projectId]
+    );
+
+    // Get the project's current site visit number
+    const projectResult = await db.query(
+      'SELECT site_visit_number FROM projects WHERE id = ?',
+      [projectId]
+    );
+
+    // Combine all unique visit numbers
+    const visitSet = new Set<number>();
+
+    // Add from plans
+    planResult.values?.forEach((row: any) => {
+      if (row.site_visit_number) visitSet.add(row.site_visit_number);
+    });
+
+    // Add from points
+    pointResult.values?.forEach((row: any) => {
+      if (row.site_visit_number) visitSet.add(row.site_visit_number);
+    });
+
+    // Add project's current visit (so it always shows even if no data yet)
+    const projectVisit = projectResult.values?.[0]?.site_visit_number;
+    if (projectVisit) visitSet.add(projectVisit);
+
+    // Always include visit 1
+    visitSet.add(1);
+
+    return Array.from(visitSet).sort((a, b) => a - b);
   }
 
   // Bulk reassignment operations

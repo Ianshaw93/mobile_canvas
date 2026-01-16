@@ -99,6 +99,7 @@ interface ParsedImportData {
       width: number;
       height: number;
       displayScale: number;
+      siteVisitNumber: number; // Site visit this plan belongs to
     };
     points: Map<string, {
       point: {
@@ -107,6 +108,7 @@ interface ParsedImportData {
         y: number;
         status: 'Open' | 'Closed' | 'Note';
         comment?: string;
+        siteVisitNumber: number; // Site visit this point belongs to
       };
       images: Array<{
         fileName: string;
@@ -284,6 +286,7 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
       width: number;
       height: number;
       displayScale: number;
+      siteVisitNumber: number; // Site visit this plan belongs to
     };
     points: Map<string, {
       point: {
@@ -292,6 +295,7 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
         y: number;
         status: 'Open' | 'Closed' | 'Note';
         comment?: string;
+        siteVisitNumber: number; // Site visit this point belongs to
       };
       images: Array<{
         fileName: string;
@@ -312,7 +316,8 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
             fileName: planMeta.fileName ? planMeta.fileName.replace('.pdf', '') : planMeta.name,
             width: planMeta.width || 0,
             height: planMeta.height || 0,
-            displayScale: planMeta.displayScale || 1.5
+            displayScale: planMeta.displayScale || 1.5,
+            siteVisitNumber: planMeta.siteVisitNumber || 1
           },
           points: new Map() // Points will be added from CSV
         });
@@ -339,9 +344,11 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
     const planName = getCol(row, 'Plan Name').trim();
       console.log(`[Import] CSV row ${i}: planId="${planId}", planName="${planName}"`);
     const planFileName = getCol(row, 'Plan File Name').trim();
+    const planSiteVisitNumber = parseInt(getCol(row, 'Plan Site Visit Number') || '1', 10) || 1;
     const planWidth = parseFloat(getCol(row, 'Plan Width')) || 0;
     const planHeight = parseFloat(getCol(row, 'Plan Height')) || 0;
     const pointId = getCol(row, 'Point ID');
+    const pointSiteVisitNumber = parseInt(getCol(row, 'Point Site Visit Number') || '1', 10) || 1;
     const pointX = parseFloat(getCol(row, 'Point X (Original)')) || parseFloat(getCol(row, 'Point X (Normalized)')) * planWidth;
     const pointY = parseFloat(getCol(row, 'Point Y (Original)')) || parseFloat(getCol(row, 'Point Y (Normalized)')) * planHeight;
     const pointComment = getCol(row, 'Point Comment') || undefined;
@@ -359,17 +366,22 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
           fileName: planFileName.replace('.pdf', ''),
           width: planWidth,
           height: planHeight,
-          displayScale: 1.5 // Default, can be adjusted
+          displayScale: 1.5, // Default, can be adjusted
+          siteVisitNumber: planSiteVisitNumber
         },
         points: new Map()
       });
-      console.log(`[Import] Created plan from CSV: "${planName}" (planId: "${planId}")`);
+      console.log(`[Import] Created plan from CSV: "${planName}" (planId: "${planId}", visit: ${planSiteVisitNumber})`);
     } else {
       // Plan exists from metadata, update dimensions if CSV has better data
       const existingPlan = plans.get(planId)!;
       if (planWidth > 0 && planHeight > 0 && (existingPlan.plan.width === 0 || existingPlan.plan.height === 0)) {
         existingPlan.plan.width = planWidth;
         existingPlan.plan.height = planHeight;
+      }
+      // Update site visit number if not set
+      if (!existingPlan.plan.siteVisitNumber) {
+        existingPlan.plan.siteVisitNumber = planSiteVisitNumber;
       }
     }
 
@@ -383,7 +395,8 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
           x: pointX,
           y: pointY,
           status: pointStatus,
-          comment: pointComment
+          comment: pointComment,
+          siteVisitNumber: pointSiteVisitNumber
         },
         images: []
       });
@@ -598,7 +611,8 @@ export async function parseExportZip(bytes: Uint8Array, previewOnly: boolean = f
             fileName: planName,
             width: 0, // Will be determined when PDF is loaded
             height: 0,
-            displayScale: 1.5
+            displayScale: 1.5,
+            siteVisitNumber: 1 // Default to visit 1 for orphan plans
           },
           points: new Map() // No points
         });
@@ -900,13 +914,14 @@ export async function applyImport(
               y: pointData.point.y,
               status: pointData.point.status,
               comment: pointData.point.comment,
+              site_visit_number: pointData.point.siteVisitNumber || 1,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             };
             await database.createPoint(dbPoint);
             pointsCreated++;
             pointWasCreated = true;
-            console.log(`[Import] Created new point at (${pointData.point.x}, ${pointData.point.y}) - restoring deleted pin`);
+            console.log(`[Import] Created new point at (${pointData.point.x}, ${pointData.point.y}) - restoring deleted pin (visit: ${pointData.point.siteVisitNumber || 1})`);
           }
         }
       } else {
@@ -919,6 +934,7 @@ export async function applyImport(
           y: pointData.point.y,
           status: pointData.point.status,
           comment: pointData.point.comment,
+          site_visit_number: pointData.point.siteVisitNumber || 1,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -1014,11 +1030,13 @@ async function createPlan(
     height: planData.plan.height,
     display_scale: planData.plan.displayScale,
     display_order: nextOrder,
+    site_visit_number: planData.plan.siteVisitNumber || 1,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
   await database.createPlan(dbPlan);
+  console.log(`[Import] Created plan "${planData.plan.name}" with site_visit_number: ${planData.plan.siteVisitNumber || 1}`);
   return true;
 }
 

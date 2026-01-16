@@ -53,10 +53,14 @@ const PdfPicker = () => {
   const addPlan = useSiteStore((state) => state.addPlan);
   const addCanvasRef = useSiteStore((state) => state.addCanvasRef);
   const selectedProjectId = useSiteStore((state) => state.selectedProjectId);
-  const selectedProject = useSiteStore((state) => 
+  const selectedProject = useSiteStore((state) =>
     state.projects.find(p => p.id === state.selectedProjectId)
   );
+  const currentSiteVisit = selectedProject?.siteVisitNumber ?? 1;
+  // Plans are shared across all visits - no filtering here
+  // Only PINS are filtered by site visit (handled in plan view components)
   const plans = selectedProject?.plans || [];
+  const [availableVisits, setAvailableVisits] = useState<number[]>([currentSiteVisit]);
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
   const router = useRouter();
   const pdfjs = usePDF();
@@ -126,6 +130,27 @@ const PdfPicker = () => {
       localStorage.setItem('lastSelectedProject', selectedProjectId);
     }
   }, [selectedProjectId]);
+
+  // Load available site visits for current project
+  useEffect(() => {
+    const loadAvailableVisits = async () => {
+      if (selectedProjectId) {
+        try {
+          const visits = await database.getAvailableSiteVisits(selectedProjectId);
+          if (visits.length > 0) {
+            setAvailableVisits(visits);
+          } else {
+            // If no visits found, default to current visit
+            setAvailableVisits([currentSiteVisit]);
+          }
+        } catch (error) {
+          console.error('Error loading available visits:', error);
+          setAvailableVisits([currentSiteVisit]);
+        }
+      }
+    };
+    loadAvailableVisits();
+  }, [selectedProjectId, currentSiteVisit]);
 
   if (!mounted) {
     return null;
@@ -389,16 +414,47 @@ const PdfPicker = () => {
               aria-label="Project Name (selected project)"
             />
 
-            <label className="text-sm">Site visit number</label>
-            <input
-              type="number"
-              min="1"
-              value={newSiteVisitNumber}
-              onChange={(e) => setNewSiteVisitNumber(e.target.value)}
-              onBlur={() => updateProject(selectedProject.id, { siteVisitNumber: Number(newSiteVisitNumber) || 1 })}
-              className="p-2 border rounded text-black w-60"
-              aria-label="Site visit number (selected project)"
-            />
+            <label className="text-sm">Site Visit</label>
+
+            {/* Currently Viewing Indicator */}
+            <div className="mb-2 px-3 py-2 bg-blue-100 border border-blue-300 rounded text-blue-800 font-semibold">
+              📍 Currently viewing: Visit {currentSiteVisit}
+            </div>
+
+            {/* Site Visit Switcher Buttons */}
+            <div className="flex flex-wrap gap-2 items-center">
+              {availableVisits.sort((a, b) => a - b).map((visit) => (
+                <button
+                  key={visit}
+                  onClick={() => {
+                    setNewSiteVisitNumber(String(visit));
+                    updateProject(selectedProject.id, { siteVisitNumber: visit });
+                  }}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    visit === currentSiteVisit
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                  aria-label={`Switch to Visit ${visit}`}
+                >
+                  Visit {visit}
+                </button>
+              ))}
+
+              {/* New Visit Button */}
+              <button
+                onClick={() => {
+                  const nextVisit = Math.max(...availableVisits, 0) + 1;
+                  setNewSiteVisitNumber(String(nextVisit));
+                  updateProject(selectedProject.id, { siteVisitNumber: nextVisit });
+                  setAvailableVisits([...availableVisits, nextVisit]);
+                }}
+                className="px-4 py-2 rounded font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+                aria-label="Create New Visit"
+              >
+                + New Visit
+              </button>
+            </div>
 
             <label className="text-sm">Engineer Name</label>
             <select
@@ -613,7 +669,9 @@ const PdfPicker = () => {
                 alt={plan.name}
                 className="block w-full h-auto"
               />
-              {(plan?.points || []).map((pt: any) => {
+              {(plan?.points || [])
+                .filter((pt: any) => (pt.siteVisitNumber || pt.site_visit_number || 1) === currentSiteVisit)
+                .map((pt: any) => {
                 const displayScale = plan?.dimensions?.displayScale || 1.5;
                 const baseWidth = plan?.dimensions?.width || 1;
                 const baseHeight = plan?.dimensions?.height || 1;

@@ -42,7 +42,13 @@ const CameraLogic= ({selectedPoint, planId}) => {
     state.projects.find(p => p.id === state.selectedProjectId)
   );
   const plan = selectedProject?.plans.find(plan => plan.id === planId);
-  const points = plan ? plan.points : [];
+  const currentSiteVisit = selectedProject?.siteVisitNumber ?? 1;
+  // Filter pins by current site visit - plans are shared across visits but pins are visit-specific
+  const points = plan
+    ? plan.points.filter((pt: any) =>
+        (pt.siteVisitNumber || pt.site_visit_number || 1) === currentSiteVisit
+      )
+    : [];
   const addCommentToPin = useSiteStore((state) => state.addCommentToPin);
   const deleteImageFromPin = useSiteStore((state) => state.deleteImageFromPin);
   const addToOfflineQueue = useSiteStore((state) => state.addToOfflineQueue);
