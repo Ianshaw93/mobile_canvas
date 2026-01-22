@@ -484,10 +484,29 @@ const useSiteStore = create<SiteState>((set, get) => ({
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
-        console.log('✅ Point saved to SQL database:', point.id);
+        console.log('✅ Point saved to SQL database:', point.id, 'with site_visit_number:', siteVisitNumber);
+
+        // Add siteVisitNumber to the point object for the store
+        const pointWithVisit = { ...point, siteVisitNumber };
+
+        // Then update Zustand store
+        set(state => {
+          const updatedProjects = state.projects.map(project => ({
+            ...project,
+            plans: project.plans.map(plan =>
+              plan.id === planId
+                ? { ...plan, points: [...plan.points, pointWithVisit] }
+                : plan
+            )
+          }));
+
+          console.log('[Store] Point added to store and SQL:', { planId, point: pointWithVisit });
+          return { projects: updatedProjects };
+        });
+        return; // Early return since we handled the store update
       }
 
-      // Then update Zustand store
+      // Non-native fallback - update Zustand store without siteVisitNumber
       set(state => {
         const updatedProjects = state.projects.map(project => ({
           ...project,
@@ -498,7 +517,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
           )
         }));
 
-        console.log('[Store] Point added to store and SQL:', { planId, point });
+        console.log('[Store] Point added to store (non-native):', { planId, point });
         return { projects: updatedProjects };
       });
     } catch (error) {
