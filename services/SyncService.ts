@@ -329,8 +329,14 @@ class SyncService {
   /**
    * Push a single project and all its data to the server.
    * Converts local DB format to server format.
+   * 
+   * @param projectId - The ID of the project to push
+   * @param onProgress - Optional callback for progress updates (message, percent 0-100)
    */
-  async pushProject(projectId: string): Promise<SyncPushResponse> {
+  async pushProject(
+    projectId: string,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<SyncPushResponse> {
     const device = await this.initializeDevice();
 
     // Check network
@@ -338,9 +344,11 @@ class SyncService {
       throw new Error('No network connection. Please try again when online.');
     }
 
+    onProgress?.('Preparing to sync...', 0);
     console.log(`[SyncService] Pushing project ${projectId}...`);
 
     // Load project data from local database
+    onProgress?.('Loading project data...', 2);
     const dbProject = await database.getProject(projectId);
     if (!dbProject) {
       throw new Error(`Project ${projectId} not found`);
@@ -356,11 +364,19 @@ class SyncService {
     // Track uploaded PDF URLs for each plan
     const planPdfUrls: Map<string, string> = new Map();
     
-    // Upload plan PDFs
+    // Upload plan PDFs (5% - 30%)
+    const pdfProgressStart = 5;
+    const pdfProgressEnd = 30;
     console.log(`[SyncService] Uploading ${dbPlans.length} plan PDFs...`);
-    for (const plan of dbPlans) {
+    onProgress?.(`Uploading ${dbPlans.length} plan PDFs...`, pdfProgressStart);
+    
+    for (let i = 0; i < dbPlans.length; i++) {
+      const plan = dbPlans[i];
+      const pdfProgress = pdfProgressStart + ((i / Math.max(dbPlans.length, 1)) * (pdfProgressEnd - pdfProgressStart));
+      
       if (plan.url) {
         try {
+          onProgress?.(`Uploading PDF: ${plan.name}...`, pdfProgress);
           console.log(`[SyncService] Uploading PDF for plan: ${plan.name}`);
           const result = await fileUploadService.uploadPlanPdf({
             localPath: plan.url,
@@ -384,11 +400,27 @@ class SyncService {
     }
     
     // ==========================================================================
-    // Step 2: Collect pins, comments, and upload attachment images
+    // Step 2: Collect pins, comments, and upload attachment images (30% - 80%)
     // ==========================================================================
+    onProgress?.('Processing pins and images...', 30);
+    
     const allPins: ServerPin[] = [];
     const allComments: ServerPinComment[] = [];
     const allAttachments: ServerAttachment[] = [];
+    
+    // First pass: count total images to upload for progress calculation
+    let totalImages = 0;
+    let processedImages = 0;
+    for (const plan of dbPlans) {
+      const points = await database.getPointsByPlan(plan.id);
+      for (const point of points) {
+        const images = await database.getImagesByPoint(point.id);
+        totalImages += images.filter(img => img.url).length;
+      }
+    }
+    
+    const imageProgressStart = 35;
+    const imageProgressEnd = 80;
     
     for (const plan of dbPlans) {
       const points = await database.getPointsByPlan(plan.id);
@@ -424,6 +456,9 @@ class SyncService {
         for (const image of images) {
           if (image.url) {
             try {
+              const imageProgress = imageProgressStart + ((processedImages / Math.max(totalImages, 1)) * (imageProgressEnd - imageProgressStart));
+              onProgress?.(`Uploading image ${processedImages + 1}/${totalImages}...`, imageProgress);
+              
               console.log(`[SyncService] Uploading image for pin: ${point.id}`);
               const result = await fileUploadService.uploadAttachmentImage({
                 localPath: image.url,
@@ -433,6 +468,8 @@ class SyncService {
                 siteVisitNumber: image.site_visit_number ?? point.site_visit_number ?? 1,
                 comment: image.comment,
               });
+              
+              processedImages++;
               
               if (result.success && result.serverUrl) {
                 allAttachments.push({
@@ -450,6 +487,7 @@ class SyncService {
                 console.warn(`[SyncService] Failed to upload image ${image.id}: ${result.error}`);
               }
             } catch (error) {
+              processedImages++;
               console.error(`[SyncService] Error uploading image ${image.id}:`, error);
             }
           }
@@ -458,8 +496,10 @@ class SyncService {
     }
 
     // ==========================================================================
-    // Step 3: Build push request with uploaded file URLs
+    // Step 3: Build push request with uploaded file URLs (80% - 90%)
     // ==========================================================================
+    onProgress?.('Building sync request...', 80);
+    
     const pushRequest: SyncPushRequest = {
       device,
       projects: [{
@@ -493,7 +533,9 @@ class SyncService {
     
     console.log(`[SyncService] Push request summary: ${pushRequest.projects?.length || 0} projects, ${pushRequest.plans?.length || 0} plans (${planPdfUrls.size} with PDFs), ${pushRequest.pins?.length || 0} pins, ${pushRequest.attachments?.length || 0} attachments`);
 
-    // Send to server
+    // Send to server (90% - 100%)
+    onProgress?.('Sending to server...', 90);
+    
     const endpoint = `${API_BASE_URL}/api/mobile/sync/push`;
     console.log(`[SyncService] Pushing to: ${endpoint}`);
     
@@ -523,6 +565,8 @@ class SyncService {
     // Update last sync timestamp
     await this.setStoredValue(LAST_SYNC_KEY, result.server_timestamp);
 
+    onProgress?.('Sync complete!', 100);
+    
     return result;
   }
 

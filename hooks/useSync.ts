@@ -20,6 +20,9 @@ export interface SyncState {
   lastSyncTime: string | null;
   error: string | null;
   deviceInfo: DeviceInfo | null;
+  // Progress tracking
+  progressMessage: string;
+  progressPercent: number;
 }
 
 export interface ServerProjectSummary {
@@ -42,6 +45,8 @@ export function useSync() {
     lastSyncTime: null,
     error: null,
     deviceInfo: null,
+    progressMessage: '',
+    progressPercent: 0,
   });
 
   const loadProjects = useSiteStore(s => s.loadProjects);
@@ -93,11 +98,28 @@ export function useSync() {
    */
   const pushProject = useCallback(async (projectId: string): Promise<SyncPushResponse | null> => {
     console.log('[useSync] pushProject called with projectId:', projectId);
-    setState(s => ({ ...s, isPushing: true, isSyncing: true, error: null }));
+    setState(s => ({ 
+      ...s, 
+      isPushing: true, 
+      isSyncing: true, 
+      error: null,
+      progressMessage: 'Starting sync...',
+      progressPercent: 0,
+    }));
     
     try {
       console.log('[useSync] Calling syncService.pushProject...');
-      const result = await syncService.pushProject(projectId);
+      
+      // Progress callback to update UI
+      const onProgress = (message: string, percent: number) => {
+        setState(s => ({
+          ...s,
+          progressMessage: message,
+          progressPercent: percent,
+        }));
+      };
+      
+      const result = await syncService.pushProject(projectId, onProgress);
       console.log('[useSync] Push successful:', result);
       
       const lastSync = await syncService.getLastSyncTime();
@@ -106,6 +128,8 @@ export function useSync() {
         isPushing: false,
         isSyncing: false,
         lastSyncTime: lastSync,
+        progressMessage: '',
+        progressPercent: 0,
       }));
       
       // Show result summary
@@ -127,6 +151,8 @@ export function useSync() {
         isPushing: false,
         isSyncing: false,
         error: message,
+        progressMessage: '',
+        progressPercent: 0,
       }));
       addToast?.(message, 'error');
       return null;
