@@ -171,20 +171,34 @@ export class FileUploadService {
   /**
    * Upload a local file to the server.
    * Handles the complete flow: read local file -> get presigned URL -> upload -> confirm.
+   * Supports both file paths AND base64 data URLs.
    */
   async uploadLocalFile(options: LocalFileUploadOptions): Promise<UploadResult> {
     try {
-      // Step 1: Read local file
-      console.log(`[FileUploadService] Reading local file: ${options.localPath}`);
-      const fileResult = await Filesystem.readFile({
-        path: options.localPath,
-        directory: Directory.Data,
-      });
+      let fileData: string;
       
-      // Handle both string and Blob responses
-      const fileData = typeof fileResult.data === 'string' 
-        ? fileResult.data 
-        : await this.blobToBase64(fileResult.data as Blob);
+      // Step 1: Get file data - handle both file paths and data URLs
+      if (options.localPath.startsWith('data:')) {
+        // It's a base64 data URL - extract the base64 part
+        console.log(`[FileUploadService] Extracting from data URL (${options.localPath.substring(0, 50)}...)`);
+        const base64Index = options.localPath.indexOf(',');
+        if (base64Index === -1) {
+          throw new Error('Invalid data URL format');
+        }
+        fileData = options.localPath.substring(base64Index + 1);
+      } else {
+        // It's a file path - read from filesystem
+        console.log(`[FileUploadService] Reading local file: ${options.localPath}`);
+        const fileResult = await Filesystem.readFile({
+          path: options.localPath,
+          directory: Directory.Data,
+        });
+        
+        // Handle both string and Blob responses
+        fileData = typeof fileResult.data === 'string' 
+          ? fileResult.data 
+          : await this.blobToBase64(fileResult.data as Blob);
+      }
 
       // Step 2: Get presigned URL
       console.log(`[FileUploadService] Getting presigned URL for: ${options.filename}`);
