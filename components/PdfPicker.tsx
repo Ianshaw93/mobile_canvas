@@ -11,6 +11,7 @@ import { sendProjectToBackend } from './ApiCalls';
 import DownloadProjectButton from './DownloadProjectButton';
 import ImportProjectButton from './ImportProjectButton';
 import SupportBundleButton from './SupportBundleButton';
+import SyncButton from './SyncButton';
 import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
 import { database } from '@/services/database';
 
@@ -513,6 +514,10 @@ const PdfPicker = () => {
           <div className="flex gap-2">
             <DownloadProjectButton projectId={selectedProjectId} />
             <ImportProjectButton />
+          </div>
+          <div className="mt-2 p-3 border rounded bg-gray-50">
+            <div className="text-sm font-medium text-gray-700 mb-2">Sync to Server</div>
+            <SyncButton projectId={selectedProjectId} />
           </div>
           <SupportBundleButton />
         </div>

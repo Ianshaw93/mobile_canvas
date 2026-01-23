@@ -180,7 +180,8 @@ const convertDBPointToPoint = (dbPoint: DBPoint, images: Image[] = []): Point =>
   y: dbPoint.y,
   status: dbPoint.status || 'Open',
   comment: dbPoint.comment,
-  images: images // Images will be filtered at the query level
+  images: images, // Images will be filtered at the query level
+  siteVisitNumber: dbPoint.site_visit_number ?? 1
 });
 
 const convertDBImageToImage = (dbImage: DBImage, projectId: string, planId: string): Image => ({
@@ -1388,7 +1389,8 @@ const useSiteStore = create<SiteState>((set, get) => ({
               points: [], // Will be populated separately
               images: [],
               planId: dbPlan.id,
-              projectId: dbProject.id
+              projectId: dbProject.id,
+              siteVisitNumber: dbPlan.site_visit_number ?? 1
             },
             points: pointsWithData
           };

@@ -4,10 +4,10 @@ import useSiteStore from '@/store/useSiteStore';
 
 const server_urls = {
     "localhost": 'http://192.168.0.14:8080',
-    // "server": 'https://mobileappbackend-production-0b73.up.railway.app'
-    "server": 'web-production-44b8.up.railway.app'
+    "server": 'https://web-production-44b8.up.railway.app'
   }
-  var subEndpoint = server_urls.localhost;
+  // Toggle between localhost and server
+  var subEndpoint = server_urls.server;
 
 // // get access token for dropbox
 // export const loginToDropbox = async () => {

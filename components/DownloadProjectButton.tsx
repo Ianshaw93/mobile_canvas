@@ -759,7 +759,7 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
         disabled={isGenerating}
         className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-400 w-full"
       >
-        {isGenerating ? `Exporting... ${progress}` : 'Export Project'}
+        {isGenerating ? `Exporting... ${progress}` : 'Export Zip'}
       </button>
       {isGenerating && (
         <div className="mt-2 flex items-center gap-2">

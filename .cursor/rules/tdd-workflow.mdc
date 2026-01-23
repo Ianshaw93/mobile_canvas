@@ -1,0 +1,103 @@
+---
+description: Test-Driven Development workflow for this project
+globs:
+alwaysApply: true
+---
+# Test-Driven Development (TDD) Workflow
+
+All new features and bug fixes should follow a TDD approach: write tests first, then write code to pass those tests.
+
+## TDD Process
+
+1. **Write Tests First**
+   - Before writing any implementation code, create tests that define expected behavior
+   - Tests can be unit tests, integration tests, or manual test checklists
+   - Tests should cover success cases, edge cases, and error cases
+
+2. **Run Tests (They Should Fail)**
+   - Verify the tests fail initially (proves tests are actually testing something)
+   - For logic tests, use simple Node.js scripts to verify behavior
+   - For UI/integration tests, use manual test checklists
+
+3. **Write Minimal Code to Pass**
+   - Write just enough code to make the tests pass
+   - Don't over-engineer or add extra features
+
+4. **Refactor**
+   - Clean up the code while keeping tests passing
+   - Improve readability and maintainability
+
+5. **Repeat**
+   - Move to the next feature/test
+
+## Test Types for This Project
+
+### Logic Tests (Node.js scripts)
+For testing pure functions and data transformations:
+```javascript
+// test-feature-name.js
+const myFunction = (input) => { /* copy function logic */ };
+
+// Test cases
+console.log('Test 1:', myFunction(input1) === expected1 ? '✅' : '❌');
+console.log('Test 2:', myFunction(input2) === expected2 ? '✅' : '❌');
+```
+
+Run with: `node test-feature-name.js`
+
+### Manual Test Checklists
+For UI and integration testing, create markdown checklists:
+```markdown
+## Feature: [Feature Name]
+
+### Setup
+- [ ] Precondition 1
+- [ ] Precondition 2
+
+### Test Cases
+- [ ] Test case 1: [Description] → Expected: [Result]
+- [ ] Test case 2: [Description] → Expected: [Result]
+
+### Edge Cases
+- [ ] Edge case 1: [Description] → Expected: [Result]
+```
+
+## Example: Adding a New Feature
+
+### Step 1: Write test first
+```javascript
+// test-site-visit-conversion.js
+const convertDBPointToPoint = (dbPoint) => ({
+  id: dbPoint.id,
+  siteVisitNumber: dbPoint.site_visit_number ?? 1
+});
+
+// Tests
+const point1 = convertDBPointToPoint({ id: '1', site_visit_number: 2 });
+console.log('Visit 2 preserved:', point1.siteVisitNumber === 2 ? '✅' : '❌');
+
+const point2 = convertDBPointToPoint({ id: '2' });
+console.log('Defaults to 1:', point2.siteVisitNumber === 1 ? '✅' : '❌');
+```
+
+### Step 2: Run test (should fail or show expected behavior)
+```bash
+node test-site-visit-conversion.js
+```
+
+### Step 3: Implement in actual codebase
+Update the real function to match the tested behavior.
+
+### Step 4: Clean up test file
+```bash
+rm test-site-visit-conversion.js
+```
+
+## Best Practices
+
+- Test the logic separately from the UI when possible
+- Keep test scripts simple and focused
+- Delete test scripts after verifying (or move to a /tests folder if keeping)
+- Document manual tests in MANUAL_TESTS_*.md files
+- Run tests after every significant change
+- If a bug is found, write a test that reproduces it BEFORE fixing
