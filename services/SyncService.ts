@@ -367,12 +367,17 @@ class SyncService {
     // Upload plan PDFs (5% - 30%)
     const pdfProgressStart = 5;
     const pdfProgressEnd = 30;
-    console.log(`[SyncService] Uploading ${dbPlans.length} plan PDFs...`);
-    onProgress?.(`Uploading ${dbPlans.length} plan PDFs...`, pdfProgressStart);
+    const plansWithUrl = dbPlans.filter(p => p.url).length;
+    console.log(`[SyncService] Found ${dbPlans.length} plans, ${plansWithUrl} have PDF URLs`);
+    onProgress?.(`Uploading ${plansWithUrl} plan PDFs...`, pdfProgressStart);
     
     for (let i = 0; i < dbPlans.length; i++) {
       const plan = dbPlans[i];
       const pdfProgress = pdfProgressStart + ((i / Math.max(dbPlans.length, 1)) * (pdfProgressEnd - pdfProgressStart));
+      
+      // Debug: Log plan URL status
+      const urlPreview = plan.url ? plan.url.substring(0, 50) + '...' : 'EMPTY/NULL';
+      console.log(`[SyncService] Plan "${plan.name}" url: ${urlPreview}`);
       
       if (plan.url) {
         try {
