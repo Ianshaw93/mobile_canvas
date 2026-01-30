@@ -150,6 +150,33 @@ export interface SyncPullResponse {
   server_timestamp: string;
 }
 
+/**
+ * Options for pulling a project from the server.
+ * Supports selective sync (Priority 3 & 4).
+ */
+export interface PullOptions {
+  /**
+   * What to include in the response:
+   * - 'plans': Only plans, no pins/comments/attachments
+   * - 'plans,pins': Plans and pins, no comments/attachments
+   * - 'all' or undefined: Everything (default)
+   */
+  include?: 'plans' | 'plans,pins' | 'all';
+
+  /**
+   * Only return pins/comments/attachments created by this device.
+   * Plans are always returned regardless of this filter.
+   */
+  deviceId?: string;
+
+  /**
+   * Exclude pins/comments/attachments created by this device.
+   * Plans are always returned regardless of this filter.
+   * Cannot be used together with deviceId.
+   */
+  excludeDeviceId?: string;
+}
+
 export interface ServerFullProject {
   id: string;
   name: string;
@@ -625,10 +652,28 @@ class SyncService {
   }
 
   /**
-   * Pull a complete project from the server and merge into local database.
-   * This is an "on-demand" pull for a specific project.
+   * Pull a project from the server and merge into local database.
+   * Supports selective sync with options for filtering.
+   *
+   * @param projectId - The ID of the project to pull
+   * @param options - Optional pull options for selective sync:
+   *   - include: 'plans' | 'plans,pins' | 'all' (default: 'all')
+   *   - deviceId: Only return data from this device
+   *   - excludeDeviceId: Exclude data from this device
+   *
+   * @example
+   * // Pull only plans (no pins) - for "clean slate" workflow
+   * await syncService.pullProject(projectId, { include: 'plans' });
+   *
+   * @example
+   * // Pull everything except my own work
+   * await syncService.pullProject(projectId, { excludeDeviceId: myDeviceId });
+   *
+   * @example
+   * // Pull only John's work
+   * await syncService.pullProject(projectId, { deviceId: 'johns-ipad-id' });
    */
-  async pullProject(projectId: string): Promise<{
+  async pullProject(projectId: string, options?: PullOptions): Promise<{
     project: ServerFullProject;
     merged: {
       plans: number;
@@ -642,10 +687,29 @@ class SyncService {
       throw new Error('No network connection. Please try again when online.');
     }
 
-    console.log(`[SyncService] Pulling project ${projectId}...`);
+    // Validate options
+    if (options?.deviceId && options?.excludeDeviceId) {
+      throw new Error('Cannot use both deviceId and excludeDeviceId options');
+    }
 
-    // Fetch full project from server
-    const response = await fetch(`${API_BASE_URL}/api/mobile/sync/projects/${projectId}`);
+    // Build URL with query parameters
+    const url = new URL(`${API_BASE_URL}/api/mobile/sync/projects/${projectId}`);
+
+    if (options?.include) {
+      url.searchParams.set('include', options.include);
+    }
+    if (options?.deviceId) {
+      url.searchParams.set('device_id', options.deviceId);
+    }
+    if (options?.excludeDeviceId) {
+      url.searchParams.set('exclude_device_id', options.excludeDeviceId);
+    }
+
+    console.log(`[SyncService] Pulling project ${projectId} with options:`, options || 'none');
+    console.log(`[SyncService] Request URL: ${url.toString()}`);
+
+    // Fetch project from server
+    const response = await fetch(url.toString());
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -960,6 +1024,65 @@ class SyncService {
    */
   async getLastSyncTime(): Promise<string | null> {
     return this.getStoredValue(LAST_SYNC_KEY);
+  }
+
+  // ===========================================================================
+  // Selective Sync Convenience Methods
+  // ===========================================================================
+
+  /**
+   * Pull only plans from a project (no pins/comments/attachments).
+   * Useful for "clean slate" workflow where you want the project structure
+   * but plan to add your own pins.
+   */
+  async pullPlansOnly(projectId: string): Promise<{
+    project: ServerFullProject;
+    merged: { plans: number; pins: number; comments: number };
+  }> {
+    return this.pullProject(projectId, { include: 'plans' });
+  }
+
+  /**
+   * Pull plans and pins only (no comments/attachments).
+   * Useful when you want pin locations but don't need the full detail.
+   */
+  async pullPlansAndPins(projectId: string): Promise<{
+    project: ServerFullProject;
+    merged: { plans: number; pins: number; comments: number };
+  }> {
+    return this.pullProject(projectId, { include: 'plans,pins' });
+  }
+
+  /**
+   * Pull a project excluding your own device's data.
+   * Useful when you want to see what others have added without your own work.
+   */
+  async pullExcludingMyDevice(projectId: string): Promise<{
+    project: ServerFullProject;
+    merged: { plans: number; pins: number; comments: number };
+  }> {
+    const device = await this.initializeDevice();
+    return this.pullProject(projectId, { excludeDeviceId: device.device_id });
+  }
+
+  /**
+   * Pull only data from a specific device.
+   * Useful for reviewing a specific collaborator's work.
+   */
+  async pullFromDevice(projectId: string, deviceId: string): Promise<{
+    project: ServerFullProject;
+    merged: { plans: number; pins: number; comments: number };
+  }> {
+    return this.pullProject(projectId, { deviceId });
+  }
+
+  /**
+   * Get the current device ID.
+   * Useful for passing to pull options.
+   */
+  async getDeviceId(): Promise<string> {
+    const device = await this.initializeDevice();
+    return device.device_id;
   }
 }
 
