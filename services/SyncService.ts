@@ -538,6 +538,12 @@ class SyncService {
     
     console.log(`[SyncService] Push request summary: ${pushRequest.projects?.length || 0} projects, ${pushRequest.plans?.length || 0} plans (${planPdfUrls.size} with PDFs), ${pushRequest.pins?.length || 0} pins, ${pushRequest.attachments?.length || 0} attachments`);
 
+    // Debug: Log actual pdf_url values being sent
+    console.log('[SyncService] Plan pdf_urls being sent:');
+    pushRequest.plans?.forEach(p => {
+      console.log(`  - ${p.name}: pdf_url = ${p.pdf_url || 'undefined/null'}`);
+    });
+
     // Send to server (90% - 100%)
     onProgress?.('Sending to server...', 90);
     
@@ -664,6 +670,57 @@ class SyncService {
   }
 
   /**
+   * Download a file from MinIO and convert to base64.
+   * Used for pulling plan PDFs from the server.
+   */
+  private async downloadFileAsBase64(fileKey: string): Promise<string | null> {
+    try {
+      // Get presigned download URL from server
+      const response = await fetch(`${API_BASE_URL}/api/mobile/files/presign-download?file_key=${encodeURIComponent(fileKey)}`);
+
+      if (!response.ok) {
+        console.warn(`[SyncService] Failed to get download URL for ${fileKey}: ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json();
+      const downloadUrl = data.download_url;
+
+      // Download the file
+      console.log(`[SyncService] Downloading file: ${fileKey}`);
+      const fileResponse = await fetch(downloadUrl);
+
+      if (!fileResponse.ok) {
+        console.warn(`[SyncService] Failed to download file ${fileKey}: ${fileResponse.status}`);
+        return null;
+      }
+
+      // Convert to base64
+      const blob = await fileResponse.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          // Return full data URL (includes mime type prefix)
+          resolve(result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error(`[SyncService] Error downloading file ${fileKey}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if a URL is a data URL (base64) or a file key.
+   */
+  private isBase64DataUrl(url: string): boolean {
+    return url.startsWith('data:');
+  }
+
+  /**
    * Merge server project data into local SQLite database.
    * Uses upsert logic - creates new records or updates existing.
    */
@@ -703,21 +760,42 @@ class SyncService {
     for (const serverPlan of serverProject.plans) {
       const existingPlan = await database.getPlan(serverPlan.id);
 
+      // Handle PDF URL - download from MinIO if it's a file key (not base64)
+      let pdfUrl = '';
+      if (serverPlan.pdf_url) {
+        if (this.isBase64DataUrl(serverPlan.pdf_url)) {
+          // Already base64, use as-is
+          pdfUrl = serverPlan.pdf_url;
+        } else {
+          // It's a MinIO file key - download and convert to base64
+          console.log(`[SyncService] Downloading PDF for plan: ${serverPlan.name}`);
+          const base64Data = await this.downloadFileAsBase64(serverPlan.pdf_url);
+          pdfUrl = base64Data || '';
+          if (!base64Data) {
+            console.warn(`[SyncService] Could not download PDF for plan ${serverPlan.name}`);
+          }
+        }
+      }
+
       if (existingPlan) {
-        // Update plan metadata (not PDF data)
-        await database.updatePlan(serverPlan.id, {
+        // Update plan metadata (and PDF if downloaded)
+        const updateData: any = {
           name: serverPlan.name,
           display_order: serverPlan.display_order,
           site_visit_number: serverPlan.site_visit_number,
-        });
+        };
+        // Only update URL if we have new PDF data
+        if (pdfUrl) {
+          updateData.url = pdfUrl;
+        }
+        await database.updatePlan(serverPlan.id, updateData);
       } else {
-        // Create plan - note: PDF data needs to be handled separately
-        // For now, create with empty URL (user will need to re-add PDF if pulling fresh)
+        // Create plan with downloaded PDF
         await database.createPlan({
           id: serverPlan.id,
           project_id: serverProject.id,
           name: serverPlan.name,
-          url: serverPlan.pdf_url || '', // Would need to download from MinIO
+          url: pdfUrl,
           thumbnail: serverPlan.thumbnail_url || '',
           width: serverPlan.width || 0,
           height: serverPlan.height || 0,
