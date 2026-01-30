@@ -660,6 +660,7 @@ class SyncService {
    *   - include: 'plans' | 'plans,pins' | 'all' (default: 'all')
    *   - deviceId: Only return data from this device
    *   - excludeDeviceId: Exclude data from this device
+   * @param onProgress - Optional callback for progress updates (message, percent 0-100)
    *
    * @example
    * // Pull only plans (no pins) - for "clean slate" workflow
@@ -673,7 +674,11 @@ class SyncService {
    * // Pull only John's work
    * await syncService.pullProject(projectId, { deviceId: 'johns-ipad-id' });
    */
-  async pullProject(projectId: string, options?: PullOptions): Promise<{
+  async pullProject(
+    projectId: string,
+    options?: PullOptions,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     project: ServerFullProject;
     merged: {
       plans: number;
@@ -686,6 +691,8 @@ class SyncService {
     if (!(await this.isOnline())) {
       throw new Error('No network connection. Please try again when online.');
     }
+
+    onProgress?.('Preparing to pull...', 0);
 
     // Validate options
     if (options?.deviceId && options?.excludeDeviceId) {
@@ -708,9 +715,10 @@ class SyncService {
     console.log(`[SyncService] Pulling project ${projectId} with options:`, options || 'none');
     console.log(`[SyncService] Request URL: ${url.toString()}`);
 
-    // Fetch project from server
+    // Fetch project from server (0% - 10%)
+    onProgress?.('Fetching project from server...', 5);
     const response = await fetch(url.toString());
-    
+
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error('Project not found on server');
@@ -720,12 +728,15 @@ class SyncService {
 
     const serverProject: ServerFullProject = await response.json();
     console.log('[SyncService] Received project:', serverProject.name);
+    onProgress?.(`Received: ${serverProject.name}`, 10);
 
-    // Merge into local database
-    const mergeResult = await this.mergeProjectToLocal(serverProject);
+    // Merge into local database (10% - 95%)
+    const mergeResult = await this.mergeProjectToLocal(serverProject, onProgress);
 
     // Update last sync timestamp
     await this.setStoredValue(LAST_SYNC_KEY, new Date().toISOString());
+
+    onProgress?.('Pull complete!', 100);
 
     return {
       project: serverProject,
@@ -852,14 +863,32 @@ class SyncService {
    * Merge server project data into local SQLite database.
    * Uses upsert logic - creates new records or updates existing.
    */
-  private async mergeProjectToLocal(serverProject: ServerFullProject): Promise<{
+  private async mergeProjectToLocal(
+    serverProject: ServerFullProject,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     plans: number;
     pins: number;
     comments: number;
   }> {
     const stats = { plans: 0, pins: 0, comments: 0 };
 
+    // Calculate totals for progress tracking
+    const totalPlans = serverProject.plans.length;
+    let totalPins = 0;
+    for (const plan of serverProject.plans) {
+      totalPins += plan.pins?.length || 0;
+    }
+
+    // Progress ranges: 10-20% project, 20-80% plans (PDFs/thumbnails), 80-95% pins
+    const projectProgressStart = 10;
+    const plansProgressStart = 15;
+    const plansProgressEnd = 80;
+    const pinsProgressStart = 80;
+    const pinsProgressEnd = 95;
+
     // Check if project exists locally
+    onProgress?.('Syncing project...', projectProgressStart);
     const existingProject = await database.getProject(serverProject.id);
     const now = new Date().toISOString();
 
@@ -885,7 +914,14 @@ class SyncService {
     }
 
     // Process plans
+    let processedPlans = 0;
+    let processedPins = 0;
+
     for (const serverPlan of serverProject.plans) {
+      // Calculate progress for this plan
+      const planProgress = plansProgressStart +
+        ((processedPlans / Math.max(totalPlans, 1)) * (plansProgressEnd - plansProgressStart));
+
       const existingPlan = await database.getPlan(serverPlan.id);
 
       // Handle PDF URL - download from MinIO if it's a file key (not base64)
@@ -897,6 +933,7 @@ class SyncService {
           pdfUrl = serverPlan.pdf_url;
         } else {
           // It's a MinIO file key - download and convert to base64
+          onProgress?.(`Downloading PDF: ${serverPlan.name}...`, planProgress);
           console.log(`[SyncService] Downloading PDF for plan: ${serverPlan.name}`);
           const base64Data = await this.downloadFileAsBase64(serverPlan.pdf_url);
           pdfUrl = base64Data || '';
@@ -908,6 +945,7 @@ class SyncService {
 
       // Generate thumbnail from downloaded PDF
       if (pdfUrl) {
+        onProgress?.(`Generating thumbnail: ${serverPlan.name}...`, planProgress + 2);
         console.log(`[SyncService] Generating thumbnail for plan: ${serverPlan.name}`);
         const generatedThumbnail = await this.generateThumbnailFromPdf(pdfUrl);
         thumbnail = generatedThumbnail || '';
@@ -950,9 +988,12 @@ class SyncService {
         });
       }
       stats.plans++;
+      processedPlans++;
+      onProgress?.(`Saved plan: ${serverPlan.name} (${processedPlans}/${totalPlans})`, planProgress + 4);
 
       // Process pins for this plan
-      for (const serverPin of serverPlan.pins) {
+      const planPins = serverPlan.pins || [];
+      for (const serverPin of planPins) {
         // Skip if deleted and not contested
         if (serverPin.deleted_at && !serverPin.deletion_contested) {
           // Delete locally if exists
@@ -991,6 +1032,14 @@ class SyncService {
           });
         }
         stats.pins++;
+        processedPins++;
+
+        // Update progress for pins (only every 5 pins to avoid too many updates)
+        if (processedPins % 5 === 0 || processedPins === totalPins) {
+          const pinProgress = pinsProgressStart +
+            ((processedPins / Math.max(totalPins, 1)) * (pinsProgressEnd - pinsProgressStart));
+          onProgress?.(`Syncing pins... (${processedPins}/${totalPins})`, pinProgress);
+        }
 
         // Note: Pin comments are stored in the comments array
         // For now we use the first comment as the legacy comment field
@@ -1002,6 +1051,7 @@ class SyncService {
       }
     }
 
+    onProgress?.(`Merged ${stats.plans} plans, ${stats.pins} pins`, 95);
     console.log('[SyncService] Merge completed:', stats);
     return stats;
   }
@@ -1035,45 +1085,58 @@ class SyncService {
    * Useful for "clean slate" workflow where you want the project structure
    * but plan to add your own pins.
    */
-  async pullPlansOnly(projectId: string): Promise<{
+  async pullPlansOnly(
+    projectId: string,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     project: ServerFullProject;
     merged: { plans: number; pins: number; comments: number };
   }> {
-    return this.pullProject(projectId, { include: 'plans' });
+    return this.pullProject(projectId, { include: 'plans' }, onProgress);
   }
 
   /**
    * Pull plans and pins only (no comments/attachments).
    * Useful when you want pin locations but don't need the full detail.
    */
-  async pullPlansAndPins(projectId: string): Promise<{
+  async pullPlansAndPins(
+    projectId: string,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     project: ServerFullProject;
     merged: { plans: number; pins: number; comments: number };
   }> {
-    return this.pullProject(projectId, { include: 'plans,pins' });
+    return this.pullProject(projectId, { include: 'plans,pins' }, onProgress);
   }
 
   /**
    * Pull a project excluding your own device's data.
    * Useful when you want to see what others have added without your own work.
    */
-  async pullExcludingMyDevice(projectId: string): Promise<{
+  async pullExcludingMyDevice(
+    projectId: string,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     project: ServerFullProject;
     merged: { plans: number; pins: number; comments: number };
   }> {
     const device = await this.initializeDevice();
-    return this.pullProject(projectId, { excludeDeviceId: device.device_id });
+    return this.pullProject(projectId, { excludeDeviceId: device.device_id }, onProgress);
   }
 
   /**
    * Pull only data from a specific device.
    * Useful for reviewing a specific collaborator's work.
    */
-  async pullFromDevice(projectId: string, deviceId: string): Promise<{
+  async pullFromDevice(
+    projectId: string,
+    deviceId: string,
+    onProgress?: (message: string, percent: number) => void
+  ): Promise<{
     project: ServerFullProject;
     merged: { plans: number; pins: number; comments: number };
   }> {
-    return this.pullProject(projectId, { deviceId });
+    return this.pullProject(projectId, { deviceId }, onProgress);
   }
 
   /**

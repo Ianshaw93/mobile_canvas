@@ -179,12 +179,12 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
         )}
 
         {/* Progress Bar */}
-        {isPushing && progressMessage && (
+        {(isPushing || isPulling) && progressMessage && (
           <div className="w-full">
             <div className="text-xs text-gray-600 mb-1">{progressMessage}</div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                className={`h-2 rounded-full transition-all duration-300 ${isPulling ? 'bg-green-500' : 'bg-blue-500'}`}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>

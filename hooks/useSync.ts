@@ -194,10 +194,26 @@ export function useSync() {
     projectId: string,
     options?: PullOptions
   ): Promise<ServerFullProject | null> => {
-    setState(s => ({ ...s, isPulling: true, isSyncing: true, error: null }));
+    setState(s => ({
+      ...s,
+      isPulling: true,
+      isSyncing: true,
+      error: null,
+      progressMessage: 'Starting pull...',
+      progressPercent: 0,
+    }));
 
     try {
-      const result = await syncService.pullProject(projectId, options);
+      // Progress callback to update UI
+      const onProgress = (message: string, percent: number) => {
+        setState(s => ({
+          ...s,
+          progressMessage: message,
+          progressPercent: percent,
+        }));
+      };
+
+      const result = await syncService.pullProject(projectId, options, onProgress);
 
       // Reload projects in the store to reflect changes
       await loadProjects();
@@ -208,6 +224,8 @@ export function useSync() {
         isPulling: false,
         isSyncing: false,
         lastSyncTime: lastSync,
+        progressMessage: '',
+        progressPercent: 0,
       }));
 
       // Show result summary with options context
@@ -232,6 +250,8 @@ export function useSync() {
         isPulling: false,
         isSyncing: false,
         error: message,
+        progressMessage: '',
+        progressPercent: 0,
       }));
       addToast?.(message, 'error');
       return null;
