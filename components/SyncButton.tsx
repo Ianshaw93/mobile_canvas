@@ -444,6 +444,20 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
                     </>
                   )}
                 </button>
+
+                {/* Progress Bar in Modal */}
+                {isPulling && progressMessage && (
+                  <div className="w-full mt-3">
+                    <div className="text-xs text-gray-600 mb-1">{progressMessage}</div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1 text-right">{Math.round(progressPercent)}%</div>
+                  </div>
+                )}
               </div>
             ) : isLoadingProjects ? (
               <div className="flex items-center justify-center py-8">
