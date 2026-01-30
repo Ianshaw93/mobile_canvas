@@ -670,6 +670,70 @@ class SyncService {
   }
 
   /**
+   * Generate a thumbnail from PDF base64 data.
+   * Used when pulling plans to create preview images.
+   */
+  private async generateThumbnailFromPdf(pdfDataUrl: string): Promise<string | null> {
+    try {
+      // Lazy import pdf.js
+      // @ts-ignore
+      const pdfjs = await import('pdfjs-dist/build/pdf');
+      // @ts-ignore
+      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+      // Extract base64 data
+      const base64 = pdfDataUrl.includes(',')
+        ? pdfDataUrl.split(',')[1]
+        : pdfDataUrl;
+
+      // Convert base64 to ArrayBuffer
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Load PDF
+      // @ts-ignore
+      const loadingTask = pdfjs.getDocument({ data: bytes.buffer });
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+
+      // Create viewport at display scale
+      const displayScale = 1.5;
+      const viewport = page.getViewport({ scale: displayScale });
+
+      // Create canvas and render
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({
+        canvasContext: context,
+        viewport,
+      }).promise;
+
+      // Convert to grayscale (matching local behavior)
+      if (context) {
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+          data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+        context.putImageData(imageData, 0, 0);
+      }
+
+      // Return as data URL
+      return canvas.toDataURL();
+    } catch (error) {
+      console.error('[SyncService] Error generating thumbnail:', error);
+      return null;
+    }
+  }
+
+  /**
    * Download a file from MinIO and convert to base64.
    * Used for pulling plan PDFs from the server.
    */
@@ -762,6 +826,7 @@ class SyncService {
 
       // Handle PDF URL - download from MinIO if it's a file key (not base64)
       let pdfUrl = '';
+      let thumbnail = '';
       if (serverPlan.pdf_url) {
         if (this.isBase64DataUrl(serverPlan.pdf_url)) {
           // Already base64, use as-is
@@ -777,8 +842,18 @@ class SyncService {
         }
       }
 
+      // Generate thumbnail from downloaded PDF
+      if (pdfUrl) {
+        console.log(`[SyncService] Generating thumbnail for plan: ${serverPlan.name}`);
+        const generatedThumbnail = await this.generateThumbnailFromPdf(pdfUrl);
+        thumbnail = generatedThumbnail || '';
+        if (!generatedThumbnail) {
+          console.warn(`[SyncService] Could not generate thumbnail for plan ${serverPlan.name}`);
+        }
+      }
+
       if (existingPlan) {
-        // Update plan metadata (and PDF if downloaded)
+        // Update plan metadata (and PDF/thumbnail if downloaded)
         const updateData: any = {
           name: serverPlan.name,
           display_order: serverPlan.display_order,
@@ -788,15 +863,19 @@ class SyncService {
         if (pdfUrl) {
           updateData.url = pdfUrl;
         }
+        // Only update thumbnail if we generated one
+        if (thumbnail) {
+          updateData.thumbnail = thumbnail;
+        }
         await database.updatePlan(serverPlan.id, updateData);
       } else {
-        // Create plan with downloaded PDF
+        // Create plan with downloaded PDF and generated thumbnail
         await database.createPlan({
           id: serverPlan.id,
           project_id: serverProject.id,
           name: serverPlan.name,
           url: pdfUrl,
-          thumbnail: serverPlan.thumbnail_url || '',
+          thumbnail: thumbnail,
           width: serverPlan.width || 0,
           height: serverPlan.height || 0,
           display_scale: serverPlan.display_scale || 1,
