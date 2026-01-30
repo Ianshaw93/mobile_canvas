@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { syncService, DeviceInfo, SyncPushResponse, ServerFullProject } from '@/services/SyncService';
+import { syncService, DeviceInfo, SyncPushResponse, ServerFullProject, PullOptions } from '@/services/SyncService';
 import useSiteStore from '@/store/useSiteStore';
 
 export interface SyncState {
@@ -183,16 +183,25 @@ export function useSync() {
 
   /**
    * Pull a project from the server and merge into local database
+   *
+   * @param projectId - The project ID to pull
+   * @param options - Optional pull options for selective sync:
+   *   - include: 'plans' | 'plans,pins' | 'all'
+   *   - deviceId: Only pull data from this device
+   *   - excludeDeviceId: Exclude data from this device
    */
-  const pullProject = useCallback(async (projectId: string): Promise<ServerFullProject | null> => {
+  const pullProject = useCallback(async (
+    projectId: string,
+    options?: PullOptions
+  ): Promise<ServerFullProject | null> => {
     setState(s => ({ ...s, isPulling: true, isSyncing: true, error: null }));
-    
+
     try {
-      const result = await syncService.pullProject(projectId);
-      
+      const result = await syncService.pullProject(projectId, options);
+
       // Reload projects in the store to reflect changes
       await loadProjects();
-      
+
       const lastSync = await syncService.getLastSyncTime();
       setState(s => ({
         ...s,
@@ -200,11 +209,21 @@ export function useSync() {
         isSyncing: false,
         lastSyncTime: lastSync,
       }));
-      
-      // Show result summary
-      const summary = `Pulled: ${result.merged.plans} plans, ${result.merged.pins} pins`;
+
+      // Show result summary with options context
+      let summary = `Pulled: ${result.merged.plans} plans, ${result.merged.pins} pins`;
+      if (options?.include === 'plans') {
+        summary = `Pulled: ${result.merged.plans} plans (plans only)`;
+      } else if (options?.include === 'plans,pins') {
+        summary = `Pulled: ${result.merged.plans} plans, ${result.merged.pins} pins (no comments/attachments)`;
+      }
+      if (options?.excludeDeviceId) {
+        summary += ' (excluding my work)';
+      } else if (options?.deviceId) {
+        summary += ' (from specific device)';
+      }
       addToast?.(summary, 'success');
-      
+
       return result.project;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Pull failed';
@@ -218,6 +237,13 @@ export function useSync() {
       return null;
     }
   }, [addToast, loadProjects]);
+
+  /**
+   * Get current device ID (useful for pull options)
+   */
+  const getDeviceId = useCallback(async (): Promise<string> => {
+    return syncService.getDeviceId();
+  }, []);
 
   /**
    * Check if device is online
@@ -236,7 +262,7 @@ export function useSync() {
   return {
     // State
     ...state,
-    
+
     // Actions
     setDeviceName,
     pushProject,
@@ -244,6 +270,7 @@ export function useSync() {
     listServerProjects,
     checkOnline,
     clearError,
+    getDeviceId,
   };
 }
 
