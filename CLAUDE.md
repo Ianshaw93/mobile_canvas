@@ -69,3 +69,36 @@ For features requiring device/UI testing, create `MANUAL_TESTS_*.md`:
 - Database uses SQLite via @capacitor-community/sqlite
 - State management via Zustand
 - Cannot run full app tests without a device - use logic tests for verification
+
+## Task List Management
+
+For tracking complex feature implementations, create markdown task files:
+
+### Structure
+
+```markdown
+# Feature Name Implementation
+
+Brief description of the feature and its purpose.
+
+## Completed Tasks
+- [x] Task 1 that has been completed
+
+## In Progress Tasks
+- [ ] Task currently being worked on
+
+## Future Tasks
+- [ ] Task planned for future implementation
+
+## Relevant Files
+- `store/useSiteStore.ts` - State management
+- `services/database.ts` - Database operations
+```
+
+### Best Practices
+
+- Break large tasks into 5-30 minute chunks
+- Group related tasks into phases
+- Test after each task completion
+- Mark tasks as completed with [x]
+- Include file paths for easy navigation

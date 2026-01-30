@@ -4,7 +4,14 @@
       "Bash(find:*)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(node test-site-visit.js:*)"
+      "Bash(node test-site-visit.js:*)",
+      "Bash(nvm list:*)",
+      "Bash(echo:*)",
+      "Bash(nvm current:*)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" -v)",
+      "Bash(\"/c/Users/IanShaw/AppData/Roaming/nvm/v20.11.0/node.exe\" -v)",
+      "Bash(nvm uninstall:*)",
+      "Bash(nvm install:*)"
     ]
   }
 }
