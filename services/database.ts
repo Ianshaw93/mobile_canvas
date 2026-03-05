@@ -1,6 +1,21 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
 
+// Web platform initialization flag
+let webStoreInitialized = false;
+
+/**
+ * Initialize the jeep-sqlite web store. Must be called once before any DB operations on web.
+ * Called from _app.tsx after the custom element is defined.
+ */
+export async function initWebDatabase(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'web' || webStoreInitialized) return;
+  await customElements.whenDefined('jeep-sqlite');
+  await CapacitorSQLite.initWebStore();
+  webStoreInitialized = true;
+  console.log('[DB] Web store initialized');
+}
+
 // Database types
 export interface DBProject {
   id: string;
@@ -55,7 +70,7 @@ class Database {
   private dbConnection: SQLiteDBConnection | null = null;
   private readonly DB_NAME = 'mobile_canvas_db';
   private readonly DB_VERSION = 6; // Increment for new migrations
-  private readonly isNative = Capacitor.isNativePlatform();
+  private readonly isWeb = Capacitor.getPlatform() === 'web';
 
   private constructor() {}
 
@@ -67,19 +82,22 @@ class Database {
   }
 
   async initialize(): Promise<void> {
-    if (!this.isNative) {
-      throw new Error('Database is only available in native mode');
+    if (this.isWeb && !webStoreInitialized) {
+      throw new Error('Web store not initialized. Call initWebDatabase() first.');
     }
     await this.getDBConnection();
+  }
+
+  /** Save to IndexedDB store on web platform after writes */
+  private async saveToStoreIfWeb(): Promise<void> {
+    if (this.isWeb) {
+      await CapacitorSQLite.saveToStore({ database: this.DB_NAME });
+    }
   }
 
   private async getDBConnection(): Promise<SQLiteDBConnection> {
     if (this.dbConnection) {
       return this.dbConnection;
-    }
-
-    if (!this.isNative) {
-      throw new Error('Database is only available in native mode');
     }
 
     const sqlite = CapacitorSQLite;
@@ -106,9 +124,12 @@ class Database {
       
       // Create tables if they don't exist
       await this.createTables();
-      
+
       // Run migrations
       await this.runMigrations();
+
+      // Persist to IndexedDB on web
+      await this.saveToStoreIfWeb();
     }
     
     return this.dbConnection;
@@ -303,6 +324,7 @@ class Database {
       'INSERT INTO projects (id, name, site_visit_number, engineer_name, client_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [project.id, project.name, project.site_visit_number ?? 1, project.engineer_name ?? null, project.client_name ?? null, project.created_at, project.updated_at]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async getProject(id: string): Promise<DBProject | undefined> {
@@ -339,6 +361,7 @@ class Database {
 
     const query = `UPDATE projects SET ${setClauses.join(', ')} WHERE id = ?`;
     await db.run(query, values);
+    await this.saveToStoreIfWeb();
   }
 
   async getAllProjects(): Promise<DBProject[]> {
@@ -350,6 +373,7 @@ class Database {
   async deleteProject(id: string): Promise<void> {
     const db = await this.getDBConnection();
     await db.run('DELETE FROM projects WHERE id = ?', [id]);
+    await this.saveToStoreIfWeb();
   }
 
   // Plan operations
@@ -359,6 +383,7 @@ class Database {
       'INSERT INTO plans (id, project_id, name, url, thumbnail, width, height, display_scale, display_order, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [plan.id, plan.project_id, plan.name, plan.url, plan.thumbnail, plan.width, plan.height, plan.display_scale, plan.display_order, plan.site_visit_number ?? 1, plan.created_at, plan.updated_at]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async getPlansByProject(projectId: string): Promise<DBPlan[]> {
@@ -370,6 +395,7 @@ class Database {
   async deletePlan(id: string): Promise<void> {
     const db = await this.getDBConnection();
     await db.run('DELETE FROM plans WHERE id = ?', [id]);
+    await this.saveToStoreIfWeb();
   }
 
   async updatePlan(id: string, updates: Partial<DBPlan>): Promise<void> {
@@ -412,6 +438,7 @@ class Database {
 
     const query = `UPDATE plans SET ${setClauses.join(', ')} WHERE id = ?`;
     await db.run(query, values);
+    await this.saveToStoreIfWeb();
   }
 
   // Plan reordering operations
@@ -432,8 +459,9 @@ class Database {
     // Swap the display_order values
     await db.run('UPDATE plans SET display_order = ?, updated_at = ? WHERE id = ?', 
       [order2, new Date().toISOString(), planId1]);
-    await db.run('UPDATE plans SET display_order = ?, updated_at = ? WHERE id = ?', 
+    await db.run('UPDATE plans SET display_order = ?, updated_at = ? WHERE id = ?',
       [order1, new Date().toISOString(), planId2]);
+    await this.saveToStoreIfWeb();
   }
 
   async getAdjacentPlan(projectId: string, planId: string, direction: 'up' | 'down'): Promise<DBPlan | null> {
@@ -465,6 +493,7 @@ class Database {
       'INSERT INTO points (id, plan_id, x, y, status, comment, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [point.id, point.plan_id, point.x, point.y, point.status, point.comment || null, point.site_visit_number ?? 1, point.created_at, point.updated_at]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async getPointsByPlan(planId: string): Promise<DBPoint[]> {
@@ -485,6 +514,7 @@ class Database {
       'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
       [point.plan_id, point.x, point.y, point.status, point.comment || null, point.site_visit_number ?? 1, point.updated_at, point.id]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async updatePointPartial(id: string, updates: Partial<Omit<DBPoint, 'id'>>): Promise<void> {
@@ -507,11 +537,13 @@ class Database {
       'UPDATE points SET plan_id = ?, x = ?, y = ?, status = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
       [updatedPoint.plan_id, updatedPoint.x, updatedPoint.y, updatedPoint.status, updatedPoint.comment || null, updatedPoint.site_visit_number ?? 1, updatedPoint.updated_at, id]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async deletePoint(id: string): Promise<void> {
     const db = await this.getDBConnection();
     await db.run('DELETE FROM points WHERE id = ?', [id]);
+    await this.saveToStoreIfWeb();
   }
 
   // Image operations
@@ -521,6 +553,7 @@ class Database {
       'INSERT INTO images (id, point_id, url, comment, site_visit_number, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [image.id, image.point_id, image.url, image.comment || null, image.site_visit_number ?? 1, image.created_at, image.updated_at]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async getImagesByPoint(pointId: string): Promise<DBImage[]> {
@@ -535,11 +568,13 @@ class Database {
       'UPDATE images SET url = ?, comment = ?, site_visit_number = ?, updated_at = ? WHERE id = ?',
       [image.url, image.comment || null, image.site_visit_number ?? 1, image.updated_at, image.id]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async deleteImage(id: string): Promise<void> {
     const db = await this.getDBConnection();
     await db.run('DELETE FROM images WHERE id = ?', [id]);
+    await this.saveToStoreIfWeb();
   }
 
   // Site visit filtering operations
@@ -639,6 +674,7 @@ class Database {
       'UPDATE images SET site_visit_number = ?, updated_at = ? WHERE point_id = ?',
       [newSiteVisitNumber, now, pointId]
     );
+    await this.saveToStoreIfWeb();
   }
 
   async reassignMultiplePointsVisit(pointIds: string[], newSiteVisitNumber: number): Promise<void> {

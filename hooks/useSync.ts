@@ -23,6 +23,8 @@ export interface SyncState {
   // Progress tracking
   progressMessage: string;
   progressPercent: number;
+  // Warning after pull (e.g. missing images)
+  pullWarning: string | null;
 }
 
 export interface ServerProjectSummary {
@@ -47,6 +49,7 @@ export function useSync() {
     deviceInfo: null,
     progressMessage: '',
     progressPercent: 0,
+    pullWarning: null,
   });
 
   const loadProjects = useSiteStore(s => s.loadProjects);
@@ -199,6 +202,7 @@ export function useSync() {
       isPulling: true,
       isSyncing: true,
       error: null,
+      pullWarning: null,
       progressMessage: 'Starting pull...',
       progressPercent: 0,
     }));
@@ -230,6 +234,9 @@ export function useSync() {
 
       // Show result summary with options context
       let summary = `Pulled: ${result.merged.plans} plans, ${result.merged.pins} pins`;
+      if (result.merged.attachments > 0) {
+        summary += `, ${result.merged.attachments} images`;
+      }
       if (options?.include === 'plans') {
         summary = `Pulled: ${result.merged.plans} plans (plans only)`;
       } else if (options?.include === 'plans,pins') {
@@ -241,6 +248,14 @@ export function useSync() {
         summary += ' (from specific device)';
       }
       addToast?.(summary, 'success');
+
+      // Warn if pins exist but have no images (likely pushed with older app version)
+      if (result.merged.pinsWithoutImages > 0 && result.merged.pins > 0) {
+        setState(s => ({
+          ...s,
+          pullWarning: `${result.merged.pinsWithoutImages} of ${result.merged.pins} pin(s) have no images. This project was likely pushed with an older app version that didn't include images. Re-push from the original device to include them.`,
+        }));
+      }
 
       return result.project;
     } catch (error) {

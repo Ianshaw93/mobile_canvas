@@ -36,6 +36,7 @@
     "eslint": "8.47.0",
     "eslint-config-next": "13.4.17",
     "idb": "^8.0.3",
+    "jeep-sqlite": "^2.8.0",
     "jszip": "^3.10.1",
     "next": "13.4.17",
     "next-auth": "^4.24.8",
@@ -45,6 +46,7 @@
     "postcss": "8.4.28",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "sql.js": "^1.14.1",
     "tailwindcss": "3.3.3",
     "typescript": "^5.1.6",
     "uuid": "^10.0.0",
@@ -56,6 +58,7 @@
     "@types/pdfjs-dist": "^2.10.378",
     "@types/uuid": "^10.0.0",
     "jest": "^29.7.0",
+    "playwright": "^1.58.2",
     "ts-jest": "^29.4.6"
   }
 }

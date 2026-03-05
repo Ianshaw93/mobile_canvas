@@ -227,14 +227,12 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   updateProject: async (id: string, updates: { name?: string; clientName?: string; siteVisitNumber?: number; engineerName?: string }) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        const dbUpdates: Partial<DBProject> = {};
-        if (updates.name !== undefined) dbUpdates.name = updates.name;
-        if (updates.clientName !== undefined) dbUpdates.client_name = updates.clientName;
-        if (updates.siteVisitNumber !== undefined) dbUpdates.site_visit_number = updates.siteVisitNumber;
-        if (updates.engineerName !== undefined) dbUpdates.engineer_name = updates.engineerName;
-        await database.updateProject(id, dbUpdates);
-      }
+      const dbUpdates: Partial<DBProject> = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.clientName !== undefined) dbUpdates.client_name = updates.clientName;
+      if (updates.siteVisitNumber !== undefined) dbUpdates.site_visit_number = updates.siteVisitNumber;
+      if (updates.engineerName !== undefined) dbUpdates.engineer_name = updates.engineerName;
+      await database.updateProject(id, dbUpdates);
 
       set(state => ({
         projects: state.projects.map(p => 
@@ -273,32 +271,28 @@ const useSiteStore = create<SiteState>((set, get) => ({
       // Initial permission check
       await checkAllPermissions();
 
-      // ✅ ADD APP LIFECYCLE LISTENERS
-      console.log('[Store] Setting up app lifecycle listeners...');
-      
-      App.addListener('appStateChange', ({ isActive }) => {
-        if (!isActive) {
-          console.log('🔄 App going inactive/terminating - data already saved to SQLite');
-          // Data is already being saved in real-time to SQLite, so nothing needed here
-        } else {
-          console.log('🔄 App becoming active - ready to load data from SQLite');
-        }
-      });
-
-      App.addListener('pause', () => {
-        console.log('⏸️ App paused - data safely in SQLite database');
-      });
-
-      App.addListener('resume', () => {
-        console.log('▶️ App resumed - data will load from SQLite as needed');
-      });
-
-      // Initialize database
+      // Add app lifecycle listeners (native only)
       if (Capacitor.isNativePlatform()) {
-        console.log('[Store] Initializing database...');
-        await database.initialize();
-        console.log('[Store] Database initialized successfully');
+        console.log('[Store] Setting up app lifecycle listeners...');
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) {
+            console.log('[Store] App going inactive - data already saved to SQLite');
+          } else {
+            console.log('[Store] App becoming active');
+          }
+        });
+        App.addListener('pause', () => {
+          console.log('[Store] App paused');
+        });
+        App.addListener('resume', () => {
+          console.log('[Store] App resumed');
+        });
       }
+
+      // Initialize database (works on both native and web via jeep-sqlite)
+      console.log('[Store] Initializing database...');
+      await database.initialize();
+      console.log('[Store] Database initialized successfully');
 
       console.log('[Store] Loading projects...');
       await get().loadProjects();
@@ -318,9 +312,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
   createProject: async (dbProject: DBProject) => {
     try {
       console.log('[Store] Creating project:', dbProject.name);
-      if (Capacitor.isNativePlatform()) {
-        await database.createProject(dbProject);
-      }
+      await database.createProject(dbProject);
       const project = convertDBProjectToProject(dbProject);
       set(state => ({
         projects: [...state.projects, project]
@@ -335,63 +327,53 @@ const useSiteStore = create<SiteState>((set, get) => ({
   loadProjects: async () => {
     try {
       console.log('[Store] Loading all projects...');
-      if (Capacitor.isNativePlatform()) {
-        const dbProjects = await database.getAllProjects();
-        console.log('[Store] Loaded projects from DB:', dbProjects);
-        
-        // ✅ Load complete projects with plans and points
-        const projects = await Promise.all(
-          dbProjects.map(async (dbProject) => {
-            // Load plans for this project
-            const dbPlans = await database.getPlansByProject(dbProject.id);
-            console.log(`[Store] Loaded ${dbPlans.length} plans for project ${dbProject.id}`);
-            
-            // Load points for each plan
-            const plans = await Promise.all(
-              dbPlans.map(async (dbPlan) => {
-                const dbPoints = await database.getPointsByPlan(dbPlan.id);
-                console.log(`[Store] Loaded ${dbPoints.length} points for plan ${dbPlan.id}`);
-                
-                // Convert DB points to UI points (with images)
-                const points = await Promise.all(
-                  dbPoints.map(async (dbPoint) => {
-                    const dbImages = await database.getImagesByPoint(dbPoint.id);
-                    const images = dbImages.map(dbImg => convertDBImageToImage(dbImg, dbProject.id, dbPlan.id));
-                    return convertDBPointToPoint(dbPoint, images);
-                  })
-                );
-                
-                // Convert DB plan to UI plan
-                return {
-                  id: dbPlan.id,
-                  name: dbPlan.name,
-                  url: dbPlan.url,
-                  thumbnail: dbPlan.thumbnail,
-                  dimensions: {
-                    width: dbPlan.width,
-                    height: dbPlan.height,
-                    displayScale: dbPlan.display_scale
-                  },
-                  points: points,
-                  images: [], // Legacy field
-                  planId: dbPlan.id,
-                  projectId: dbProject.id
-                } as Plan;
-              })
-            );
-            
-            return convertDBProjectToProject(dbProject, plans);
-          })
-        );
-        
-        console.log('[Store] Loaded complete projects with plans and points:', projects);
-        set({ projects });
-        
-        // Ensure migration runs after loading projects as well
-        await useSiteStore.getState().runGrayscaleMigrationIfNeeded();
-      } else {
-        set({ projects: [] });
-      }
+      const dbProjects = await database.getAllProjects();
+      console.log('[Store] Loaded projects from DB:', dbProjects);
+
+      const projects = await Promise.all(
+        dbProjects.map(async (dbProject) => {
+          const dbPlans = await database.getPlansByProject(dbProject.id);
+          console.log(`[Store] Loaded ${dbPlans.length} plans for project ${dbProject.id}`);
+
+          const plans = await Promise.all(
+            dbPlans.map(async (dbPlan) => {
+              const dbPoints = await database.getPointsByPlan(dbPlan.id);
+              console.log(`[Store] Loaded ${dbPoints.length} points for plan ${dbPlan.id}`);
+
+              const points = await Promise.all(
+                dbPoints.map(async (dbPoint) => {
+                  const dbImages = await database.getImagesByPoint(dbPoint.id);
+                  const images = dbImages.map(dbImg => convertDBImageToImage(dbImg, dbProject.id, dbPlan.id));
+                  return convertDBPointToPoint(dbPoint, images);
+                })
+              );
+
+              return {
+                id: dbPlan.id,
+                name: dbPlan.name,
+                url: dbPlan.url,
+                thumbnail: dbPlan.thumbnail,
+                dimensions: {
+                  width: dbPlan.width,
+                  height: dbPlan.height,
+                  displayScale: dbPlan.display_scale
+                },
+                points: points,
+                images: [],
+                planId: dbPlan.id,
+                projectId: dbProject.id
+              } as Plan;
+            })
+          );
+
+          return convertDBProjectToProject(dbProject, plans);
+        })
+      );
+
+      console.log('[Store] Loaded complete projects with plans and points:', projects);
+      set({ projects });
+
+      await useSiteStore.getState().runGrayscaleMigrationIfNeeded();
     } catch (error) {
       console.error('[Store] Error loading projects:', error);
       throw error;
@@ -400,14 +382,12 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   loadProject: async (id: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        const dbProject = await database.getProject(id);
-        if (dbProject) {
-          const project = convertDBProjectToProject(dbProject);
-          set(state => ({
-            projects: state.projects.map(p => p.id === id ? project : p)
-          }));
-        }
+      const dbProject = await database.getProject(id);
+      if (dbProject) {
+        const project = convertDBProjectToProject(dbProject);
+        set(state => ({
+          projects: state.projects.map(p => p.id === id ? project : p)
+        }));
       }
     } catch (error) {
       console.error('Error loading project:', error);
@@ -418,9 +398,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
   // Cleanup operations
   deleteProject: async (id: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        await database.deleteProject(id);
-      }
+      await database.deleteProject(id);
       set(state => ({
         projects: state.projects.filter(p => p.id !== id)
       }));
@@ -462,63 +440,39 @@ const useSiteStore = create<SiteState>((set, get) => ({
     console.log('[Store] Adding point:', { planId, point });
 
     try {
-      // ✅ Save to SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        // Get plan to find project_id, then get project's site visit number
-        const plan = await database.getPlan(planId);
-
-        if (!plan) {
-          throw new Error(`Plan not found: ${planId}`);
-        }
-
-        const project = await database.getProject(plan.project_id);
-        const siteVisitNumber = project?.site_visit_number ?? 1;
-
-        await database.createPoint({
-          id: point.id,
-          plan_id: planId,
-          x: point.x,
-          y: point.y,
-          status: point.status ?? 'Open',
-          comment: point.comment,
-          site_visit_number: siteVisitNumber,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-        console.log('✅ Point saved to SQL database:', point.id, 'with site_visit_number:', siteVisitNumber);
-
-        // Add siteVisitNumber to the point object for the store
-        const pointWithVisit = { ...point, siteVisitNumber };
-
-        // Then update Zustand store
-        set(state => {
-          const updatedProjects = state.projects.map(project => ({
-            ...project,
-            plans: project.plans.map(plan =>
-              plan.id === planId
-                ? { ...plan, points: [...plan.points, pointWithVisit] }
-                : plan
-            )
-          }));
-
-          console.log('[Store] Point added to store and SQL:', { planId, point: pointWithVisit });
-          return { projects: updatedProjects };
-        });
-        return; // Early return since we handled the store update
+      // Save to SQL database FIRST
+      const dbPlan = await database.getPlan(planId);
+      if (!dbPlan) {
+        throw new Error(`Plan not found: ${planId}`);
       }
 
-      // Non-native fallback - update Zustand store without siteVisitNumber
+      const project = await database.getProject(dbPlan.project_id);
+      const siteVisitNumber = project?.site_visit_number ?? 1;
+
+      await database.createPoint({
+        id: point.id,
+        plan_id: planId,
+        x: point.x,
+        y: point.y,
+        status: point.status ?? 'Open',
+        comment: point.comment,
+        site_visit_number: siteVisitNumber,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      console.log('[Store] Point saved to database:', point.id);
+
+      const pointWithVisit = { ...point, siteVisitNumber };
+
       set(state => {
         const updatedProjects = state.projects.map(project => ({
           ...project,
           plans: project.plans.map(plan =>
             plan.id === planId
-              ? { ...plan, points: [...plan.points, point] }
+              ? { ...plan, points: [...plan.points, pointWithVisit] }
               : plan
           )
         }));
-
-        console.log('[Store] Point added to store (non-native):', { planId, point });
         return { projects: updatedProjects };
       });
     } catch (error) {
@@ -529,11 +483,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   deletePoint: async (planId: string, pointId: string) => {
     try {
-      // ✅ Delete from SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        await database.deletePoint(pointId);
-        console.log('✅ Point deleted from SQL database:', pointId);
-      }
+      await database.deletePoint(pointId);
 
       // Then update Zustand store
       set(state => ({
@@ -554,19 +504,14 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   changePointLocation: async (planId: string, pointId: string, x: number, y: number) => {
     try {
-      // ✅ Save to SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        // Get current point data to preserve other fields
-        const currentPoint = await database.getPoint(pointId);
-        if (currentPoint) {
-          await database.updatePoint({
-            ...currentPoint,
-            x: x,
-            y: y,
-            updated_at: new Date().toISOString()
-          });
-          console.log('✅ Point location updated in SQL database:', pointId);
-        }
+      const currentPoint = await database.getPoint(pointId);
+      if (currentPoint) {
+        await database.updatePoint({
+          ...currentPoint,
+          x: x,
+          y: y,
+          updated_at: new Date().toISOString()
+        });
       }
 
       // Then update Zustand store
@@ -595,27 +540,23 @@ const useSiteStore = create<SiteState>((set, get) => ({
     console.log('📍 Store addImageToPin called:', { planId, pointId, image });
 
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Get plan to find project_id, then get project's site visit number
-        const plan = await database.getPlan(planId);
-
-        if (!plan) {
-          throw new Error(`Plan not found: ${planId}`);
-        }
-
-        const project = await database.getProject(plan.project_id);
-        const siteVisitNumber = project?.site_visit_number ?? 1;
-
-        await database.createImage({
-          id: image.key,
-          point_id: pointId,
-          url: image.url,
-          comment: image.comment || '',
-          site_visit_number: siteVisitNumber,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+      const dbPlan = await database.getPlan(planId);
+      if (!dbPlan) {
+        throw new Error(`Plan not found: ${planId}`);
       }
+
+      const dbProject = await database.getProject(dbPlan.project_id);
+      const siteVisitNumber = dbProject?.site_visit_number ?? 1;
+
+      await database.createImage({
+        id: image.key,
+        point_id: pointId,
+        url: image.url,
+        comment: image.comment || '',
+        site_visit_number: siteVisitNumber,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       set(state => {
         const updatedProjects = state.projects.map(project => ({
@@ -654,13 +595,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   deleteImageFromPin: async (planId: string, pointId: string, imageKey: string) => {
     try {
-      // ✅ Delete from SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        await database.deleteImage(imageKey);
-        console.log('✅ Image deleted from SQL database:', imageKey);
-      }
+      await database.deleteImage(imageKey);
 
-      // ✅ Update Zustand store
+      // Update Zustand store
       set(state => ({
         projects: state.projects.map(project => ({
           ...project,
@@ -686,18 +623,13 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addCommentToPin: async (planId: string, pointId: string, comment: string) => {
     try {
-      // ✅ Save to SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        // Get current point data to preserve other fields
-        const currentPoint = await database.getPoint(pointId);
-        if (currentPoint) {
-          await database.updatePoint({
-            ...currentPoint,
-            comment: comment,
-            updated_at: new Date().toISOString()
-          });
-          console.log('✅ Point comment saved to SQL database:', pointId);
-        }
+      const currentPoint = await database.getPoint(pointId);
+      if (currentPoint) {
+        await database.updatePoint({
+          ...currentPoint,
+          comment: comment,
+          updated_at: new Date().toISOString()
+        });
       }
 
       // Then update Zustand store
@@ -724,22 +656,15 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addCommentToImage: async (planId: string, pointId: string, imageKey: string, comment: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Get existing image data to preserve URL and other fields
-        const existingImages = await database.getImagesByPoint(pointId);
-        const existingImage = existingImages.find(img => img.id === imageKey);
-        
-        if (existingImage) {
-          // Update only the comment and timestamp, preserve all other data
-          await database.updateImage({
-            ...existingImage,
-            comment: comment,
-            updated_at: new Date().toISOString()
-          });
-          console.log('✅ Successfully updated comment for image:', imageKey);
-        } else {
-          console.error('❌ Could not find existing image to update:', imageKey);
-        }
+      const existingImages = await database.getImagesByPoint(pointId);
+      const existingImage = existingImages.find(img => img.id === imageKey);
+
+      if (existingImage) {
+        await database.updateImage({
+          ...existingImage,
+          comment: comment,
+          updated_at: new Date().toISOString()
+        });
       }
 
       // Update state using nested structure only
@@ -773,11 +698,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   updatePinStatus: async (planId: string, pointId: string, status: 'Open' | 'Closed' | 'Note') => {
     try {
-      // Save to SQL first
-      if (Capacitor.isNativePlatform()) {
-        await database.updatePointPartial(pointId, { status });
-        console.log('✅ Point status updated in SQL database:', pointId, status);
-      }
+      await database.updatePointPartial(pointId, { status });
       // Update local store
       set(state => ({
         projects: state.projects.map(project => ({
@@ -990,9 +911,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
         updated_at: now
       };
 
-      if (Capacitor.isNativePlatform()) {
-        await database.createProject(dbProject);
-      }
+      await database.createProject(dbProject);
 
       const project: Project = {
         id: projectId,
@@ -1020,11 +939,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   updatePlanName: async (projectId: string, planId: string, newName: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        await database.updatePlan(planId, { name: newName });
-      }
+      await database.updatePlan(planId, { name: newName });
 
-      // ✅ Use nested structure only (like reference branch)
+      // Use nested structure only (like reference branch)
       set((state) => ({
         projects: state.projects.map(project =>
           project.id === projectId
@@ -1048,13 +965,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   movePlanUp: async (projectId: string, planId: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Find the adjacent plan to swap with
-        const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'up');
-        if (adjacentPlan) {
-          await database.swapPlanOrder(planId, adjacentPlan.id);
-          console.log('✅ Plan moved up in database:', planId);
-        }
+      const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'up');
+      if (adjacentPlan) {
+        await database.swapPlanOrder(planId, adjacentPlan.id);
       }
 
       // Reload projects to get updated order
@@ -1069,13 +982,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   movePlanDown: async (projectId: string, planId: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Find the adjacent plan to swap with
-        const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'down');
-        if (adjacentPlan) {
-          await database.swapPlanOrder(planId, adjacentPlan.id);
-          console.log('✅ Plan moved down in database:', planId);
-        }
+      const adjacentPlan = await database.getAdjacentPlan(projectId, planId, 'down');
+      if (adjacentPlan) {
+        await database.swapPlanOrder(planId, adjacentPlan.id);
       }
 
       // Reload projects to get updated order
@@ -1090,11 +999,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   deletePlan: async (projectId: string, planId: string) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        // Delete from database (cascades to points and images)
-        await database.deletePlan(planId);
-        console.log('✅ Plan deleted from database:', planId);
-      }
+      await database.deletePlan(planId);
 
       // Update local state immediately
       set(state => ({
@@ -1120,33 +1025,27 @@ const useSiteStore = create<SiteState>((set, get) => ({
     console.log('[Store] Adding plan:', { projectId, plan });
 
     try {
-      // ✅ Save to SQL database FIRST
-      if (Capacitor.isNativePlatform()) {
-        // Get current plans to determine next display_order
-        const existingPlans = await database.getPlansByProject(projectId);
-        const maxOrder = existingPlans.reduce((max, p) => Math.max(max, p.display_order), 0);
-        const nextOrder = maxOrder + 10; // Use gaps for easy reordering
+      const existingPlans = await database.getPlansByProject(projectId);
+      const maxOrder = existingPlans.reduce((max, p) => Math.max(max, p.display_order), 0);
+      const nextOrder = maxOrder + 10;
 
-        // Get project's current site visit number
-        const project = await database.getProject(projectId);
-        const siteVisitNumber = project?.site_visit_number ?? 1;
+      const dbProject = await database.getProject(projectId);
+      const siteVisitNumber = dbProject?.site_visit_number ?? 1;
 
-        await database.createPlan({
-          id: plan.id,
-          project_id: projectId,
-          name: plan.name,
-          url: plan.url,
-          thumbnail: plan.thumbnail,
-          width: plan.dimensions.width,
-          height: plan.dimensions.height,
-          display_scale: plan.dimensions.displayScale,
-          display_order: nextOrder,
-          site_visit_number: siteVisitNumber,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-        console.log('✅ Plan saved to SQL database:', plan.id);
-      }
+      await database.createPlan({
+        id: plan.id,
+        project_id: projectId,
+        name: plan.name,
+        url: plan.url,
+        thumbnail: plan.thumbnail,
+        width: plan.dimensions.width,
+        height: plan.dimensions.height,
+        display_scale: plan.dimensions.displayScale,
+        display_order: nextOrder,
+        site_visit_number: siteVisitNumber,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       // Then update Zustand store  
       set(state => {
@@ -1177,17 +1076,15 @@ const useSiteStore = create<SiteState>((set, get) => ({
 
   addImage: async (pointId: string, image: { url: string; comment?: string }) => {
     try {
-      if (Capacitor.isNativePlatform()) {
-        const dbImage: DBImage = {
-          id: uuidv4(),
-          point_id: pointId,
-          url: image.url,
-          comment: image.comment,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        await database.createImage(dbImage);
-      }
+      const dbImage: DBImage = {
+        id: uuidv4(),
+        point_id: pointId,
+        url: image.url,
+        comment: image.comment,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      await database.createImage(dbImage);
 
       const newImage: Image = {
         key: uuidv4(),
@@ -1244,9 +1141,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
     try {
       console.log('🔄 Loading fresh pin data from SQL for pointId:', pointId);
       
-      if (!Capacitor.isNativePlatform()) {
-        throw new Error('SQL database only available in native mode');
-      }
+      // Database now works on both native and web
 
       // Load fresh point from SQL
       const dbPoint = await database.getPoint(pointId);
@@ -1314,9 +1209,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
     try {
       console.log('📦 Loading export data for project:', projectId);
       
-      if (!Capacitor.isNativePlatform()) {
-        throw new Error('Export only available in native mode');
-      }
+      // Database now works on both native and web
 
       // Load project from database
       const dbProject = await database.getProject(projectId);
@@ -1482,10 +1375,7 @@ useSiteStore.setState((state: any) => ({
             const newThumb = await generateGrayscaleThumbnailFromPdf(grayUrl);
 
             if (grayUrl && (grayUrl !== plan.url || newThumb !== plan.thumbnail)) {
-              // Update DB if native
-              if (Capacitor.isNativePlatform()) {
-                await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
-              }
+              await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
               // Update in-memory state
               useSiteStore.setState((prev: any) => ({
                 projects: prev.projects.map((p: any) =>

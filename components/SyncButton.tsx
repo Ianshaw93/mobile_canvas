@@ -31,6 +31,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
     error,
     progressMessage,
     progressPercent,
+    pullWarning,
     pushProject,
     pullProject,
     listServerProjects,
@@ -50,6 +51,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
   const [showPullOptions, setShowPullOptions] = useState(false);
   const [includeOption, setIncludeOption] = useState<IncludeOption>('all');
   const [deviceFilterOption, setDeviceFilterOption] = useState<DeviceFilterOption>('all');
+  const [showWarningDetail, setShowWarningDetail] = useState(false);
 
   const handlePush = async () => {
     console.log('[SyncButton] handlePush called, projectId:', projectId);
@@ -176,6 +178,17 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
             <span>{error}</span>
             <button onClick={clearError} className="text-red-700 font-bold">×</button>
           </div>
+        )}
+
+        {/* Pull Warning (e.g. missing images) */}
+        {pullWarning && (
+          <button
+            onClick={() => setShowWarningDetail(true)}
+            className="w-full text-left text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2"
+          >
+            <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>
+            <span>Some pins have no images. <span className="underline">Tap for details</span></span>
+          </button>
         )}
 
         {/* Progress Bar */}
@@ -492,6 +505,25 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Warning Detail Modal */}
+      {showWarningDetail && pullWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-80 shadow-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-amber-500 text-xl">⚠</span>
+              <h3 className="text-lg font-semibold text-gray-900">Missing Images</h3>
+            </div>
+            <p className="text-sm text-gray-700 mb-4">{pullWarning}</p>
+            <button
+              onClick={() => setShowWarningDetail(false)}
+              className="w-full py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}

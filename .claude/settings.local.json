@@ -11,7 +11,20 @@
       "Bash(\"/c/Program Files/nodejs/node.exe\" -v)",
       "Bash(\"/c/Users/IanShaw/AppData/Roaming/nvm/v20.11.0/node.exe\" -v)",
       "Bash(nvm uninstall:*)",
-      "Bash(nvm install:*)"
+      "Bash(nvm install:*)",
+      "Bash(npm run static:*)",
+      "Bash(npx cap sync)",
+      "Bash(npx next build:*)",
+      "Bash(NEXT_TELEMETRY_DISABLED=1 CI=true npx next build:*)",
+      "Bash(npx next export)",
+      "Bash(node:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(dir:*)",
+      "Bash(npm --version)",
+      "Bash(tee:*)",
+      "Bash(./node_modules/.bin/next build:*)",
+      "Bash(ls:*)"
     ]
   }
 }

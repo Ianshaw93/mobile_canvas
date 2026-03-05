@@ -13,6 +13,7 @@ import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
+import { fileStorageService } from './fileStorage';
 import { database, DBProject, DBPlan, DBPoint, DBImage } from './database';
 import { v4 as uuidv4 } from 'uuid';
 import { FileUploadService, UploadResult } from './FileUploadService';
@@ -329,8 +330,8 @@ class SyncService {
    * Clear user info (call on logout)
    */
   async clearUserInfo(): Promise<void> {
-    await Preferences.remove({ key: USER_ID_KEY });
-    await Preferences.remove({ key: USER_NAME_KEY });
+    await this.removeStoredValue(USER_ID_KEY);
+    await this.removeStoredValue(USER_NAME_KEY);
     if (this.deviceInfo) {
       this.deviceInfo.user_id = undefined;
       this.deviceInfo.user_name = undefined;
@@ -390,6 +391,8 @@ class SyncService {
     
     // Track uploaded PDF URLs for each plan
     const planPdfUrls: Map<string, string> = new Map();
+    // Track uploaded thumbnail URLs for each plan
+    const planThumbnailUrls: Map<string, string> = new Map();
     
     // Upload plan PDFs (5% - 30%)
     const pdfProgressStart = 5;
@@ -421,6 +424,49 @@ class SyncService {
           if (result.success && result.serverUrl) {
             planPdfUrls.set(plan.id, result.serverUrl);
             console.log(`[SyncService] PDF uploaded: ${plan.name} -> ${result.serverUrl}`);
+
+            // Generate and upload thumbnail from the PDF
+            try {
+              onProgress?.(`Generating thumbnail: ${plan.name}...`, pdfProgress + 0.5);
+              console.log(`[SyncService] Generating thumbnail for plan: ${plan.name}`);
+
+              // Read the PDF file as base64 data URL
+              let pdfDataUrl: string;
+              if (plan.url.startsWith('data:')) {
+                pdfDataUrl = plan.url;
+              } else {
+                const base64Data = await fileStorageService.readFile(plan.url);
+                pdfDataUrl = base64Data.includes(',') ? base64Data : `data:application/pdf;base64,${base64Data}`;
+              }
+
+              // Generate thumbnail
+              const thumbnailDataUrl = await this.generateThumbnailFromPdf(pdfDataUrl);
+
+              if (thumbnailDataUrl) {
+                // Upload thumbnail
+                onProgress?.(`Uploading thumbnail: ${plan.name}...`, pdfProgress + 1);
+                console.log(`[SyncService] Uploading thumbnail for plan: ${plan.name}`);
+
+                const thumbResult = await fileUploadService.uploadLocalFile({
+                  localPath: thumbnailDataUrl, // FileUploadService handles data URLs
+                  filename: `${plan.name}_thumb.jpg`,
+                  contentType: 'image/jpeg',
+                  projectId: projectId,
+                });
+
+                if (thumbResult.success && thumbResult.serverUrl) {
+                  planThumbnailUrls.set(plan.id, thumbResult.serverUrl);
+                  console.log(`[SyncService] Thumbnail uploaded: ${plan.name} -> ${thumbResult.serverUrl}`);
+                } else {
+                  console.warn(`[SyncService] Failed to upload thumbnail for plan ${plan.name}: ${thumbResult.error}`);
+                }
+              } else {
+                console.warn(`[SyncService] Failed to generate thumbnail for plan ${plan.name}`);
+              }
+            } catch (thumbError) {
+              console.error(`[SyncService] Error generating/uploading thumbnail for plan ${plan.name}:`, thumbError);
+              // Continue without thumbnail - not critical
+            }
           } else {
             console.warn(`[SyncService] Failed to upload PDF for plan ${plan.name}: ${result.error}`);
           }
@@ -549,7 +595,8 @@ class SyncService {
         name: plan.name,
         // Use uploaded PDF URL if available
         pdf_url: planPdfUrls.get(plan.id),
-        thumbnail_url: undefined, // TODO: Upload thumbnails
+        // Use uploaded thumbnail URL if available
+        thumbnail_url: planThumbnailUrls.get(plan.id),
         display_order: plan.display_order,
         site_visit_number: plan.site_visit_number ?? 1,
         width: plan.width,
@@ -563,12 +610,12 @@ class SyncService {
       attachments: allAttachments.length > 0 ? allAttachments : undefined,
     };
     
-    console.log(`[SyncService] Push request summary: ${pushRequest.projects?.length || 0} projects, ${pushRequest.plans?.length || 0} plans (${planPdfUrls.size} with PDFs), ${pushRequest.pins?.length || 0} pins, ${pushRequest.attachments?.length || 0} attachments`);
+    console.log(`[SyncService] Push request summary: ${pushRequest.projects?.length || 0} projects, ${pushRequest.plans?.length || 0} plans (${planPdfUrls.size} with PDFs, ${planThumbnailUrls.size} with thumbnails), ${pushRequest.pins?.length || 0} pins, ${pushRequest.attachments?.length || 0} attachments`);
 
-    // Debug: Log actual pdf_url values being sent
-    console.log('[SyncService] Plan pdf_urls being sent:');
+    // Debug: Log actual pdf_url and thumbnail_url values being sent
+    console.log('[SyncService] Plan URLs being sent:');
     pushRequest.plans?.forEach(p => {
-      console.log(`  - ${p.name}: pdf_url = ${p.pdf_url || 'undefined/null'}`);
+      console.log(`  - ${p.name}: pdf_url = ${p.pdf_url || 'undefined/null'}, thumbnail_url = ${p.thumbnail_url || 'undefined/null'}`);
     });
 
     // Send to server (90% - 100%)
@@ -684,6 +731,8 @@ class SyncService {
       plans: number;
       pins: number;
       comments: number;
+      attachments: number;
+      pinsWithoutImages: number;
     };
   }> {
     const device = await this.initializeDevice();
@@ -800,8 +849,8 @@ class SyncService {
         context.putImageData(imageData, 0, 0);
       }
 
-      // Return as data URL
-      return canvas.toDataURL();
+      // Return as JPEG data URL (smaller file size, consistent with upload content type)
+      return canvas.toDataURL('image/jpeg', 0.8);
     } catch (error) {
       console.error('[SyncService] Error generating thumbnail:', error);
       return null;
@@ -870,22 +919,30 @@ class SyncService {
     plans: number;
     pins: number;
     comments: number;
+    attachments: number;
+    pinsWithoutImages: number;
   }> {
-    const stats = { plans: 0, pins: 0, comments: 0 };
+    const stats = { plans: 0, pins: 0, comments: 0, attachments: 0, pinsWithoutImages: 0 };
 
     // Calculate totals for progress tracking
     const totalPlans = serverProject.plans.length;
     let totalPins = 0;
+    let totalAttachments = 0;
     for (const plan of serverProject.plans) {
       totalPins += plan.pins?.length || 0;
+      for (const pin of plan.pins || []) {
+        totalAttachments += pin.attachments?.length || 0;
+      }
     }
 
-    // Progress ranges: 10-20% project, 20-80% plans (PDFs/thumbnails), 80-95% pins
+    // Progress ranges: 10-15% project, 15-80% plans (PDFs/thumbnails), 80-90% pins, 90-95% attachments
     const projectProgressStart = 10;
     const plansProgressStart = 15;
     const plansProgressEnd = 80;
     const pinsProgressStart = 80;
-    const pinsProgressEnd = 95;
+    const pinsProgressEnd = totalAttachments > 0 ? 90 : 95;
+    const attachmentsProgressStart = 90;
+    const attachmentsProgressEnd = 95;
 
     // Check if project exists locally
     onProgress?.('Syncing project...', projectProgressStart);
@@ -916,6 +973,7 @@ class SyncService {
     // Process plans
     let processedPlans = 0;
     let processedPins = 0;
+    let processedAttachments = 0;
 
     for (const serverPlan of serverProject.plans) {
       // Calculate progress for this plan
@@ -1046,12 +1104,64 @@ class SyncService {
         // TODO: Implement separate comments table in local DB for full multi-comment support
         stats.comments += serverPin.comments?.length || 0;
 
-        // TODO: Handle attachments - download from MinIO
-        // For now, attachments need separate handling for file downloads
+        // Track pins that have no attachments on server (likely pushed with older version)
+        const pinAttachments = serverPin.attachments || [];
+        if (pinAttachments.length === 0) {
+          stats.pinsWithoutImages++;
+        }
+
+        // Download attachments from MinIO
+        if (pinAttachments.length > 0) {
+          // Get existing local images to avoid re-downloading
+          const existingImages = await database.getImagesByPoint(serverPin.id);
+          const existingImageIds = new Set(existingImages.map(img => img.id));
+
+          for (const attachment of pinAttachments) {
+            // Skip if already downloaded locally
+            if (existingImageIds.has(attachment.id)) {
+              stats.attachments++;
+              processedAttachments++;
+              continue;
+            }
+
+            // Download image from MinIO
+            let imageData: string | null = null;
+            if (attachment.url) {
+              if (this.isBase64DataUrl(attachment.url)) {
+                imageData = attachment.url;
+              } else {
+                const attachmentProgress = attachmentsProgressStart +
+                  ((processedAttachments / Math.max(totalAttachments, 1)) * (attachmentsProgressEnd - attachmentsProgressStart));
+                onProgress?.(`Downloading image ${processedAttachments + 1}/${totalAttachments}...`, attachmentProgress);
+                imageData = await this.downloadFileAsBase64(attachment.url);
+              }
+            }
+
+            if (imageData) {
+              try {
+                await database.createImage({
+                  id: attachment.id,
+                  point_id: serverPin.id,
+                  url: imageData,
+                  comment: attachment.comment || undefined,
+                  site_visit_number: attachment.site_visit_number,
+                  created_at: attachment.created_at || now,
+                  updated_at: now,
+                });
+                stats.attachments++;
+              } catch (err) {
+                console.warn(`[SyncService] Failed to save image ${attachment.id}:`, err);
+              }
+            } else {
+              console.warn(`[SyncService] Could not download attachment ${attachment.id} for pin ${serverPin.id}`);
+            }
+            processedAttachments++;
+          }
+        }
       }
     }
 
-    onProgress?.(`Merged ${stats.plans} plans, ${stats.pins} pins`, 95);
+    onProgress?.(`Merged ${stats.plans} plans, ${stats.pins} pins, ${stats.attachments} images`, 95);
     console.log('[SyncService] Merge completed:', stats);
     return stats;
   }
@@ -1061,12 +1171,27 @@ class SyncService {
   // ===========================================================================
 
   private async getStoredValue(key: string): Promise<string | null> {
+    if (Capacitor.getPlatform() === 'web') {
+      return localStorage.getItem(key);
+    }
     const result = await Preferences.get({ key });
     return result.value;
   }
 
   private async setStoredValue(key: string, value: string): Promise<void> {
+    if (Capacitor.getPlatform() === 'web') {
+      localStorage.setItem(key, value);
+      return;
+    }
     await Preferences.set({ key, value });
+  }
+
+  private async removeStoredValue(key: string): Promise<void> {
+    if (Capacitor.getPlatform() === 'web') {
+      localStorage.removeItem(key);
+      return;
+    }
+    await Preferences.remove({ key });
   }
 
   /**
