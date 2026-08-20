@@ -1,5 +1,7 @@
 // Utility to convert a single-page PDF to grayscale and return as base64 data URL
 // Uses pdf.js to render and pdfmake to rebuild a PDF with a grayscale image
+import { grayscalePageGeometry } from './planCoordinates';
+
 export async function convertPdfToGrayscale(base64PdfDataUrl: string): Promise<string> {
   // Lazy-load libraries to avoid increasing initial bundle size
   // @ts-ignore
@@ -45,13 +47,18 @@ export async function convertPdfToGrayscale(base64PdfDataUrl: string): Promise<s
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
 
-  // Render page to canvas
-  const scale = 1.5;
-  const viewport = page.getViewport({ scale });
+  // Render page to canvas. The raster is drawn at 1.5× for quality, but the
+  // rebuilt PDF's page must keep the source's scale-1.0 size — sizing the page
+  // from the 1.5× viewport inflates page geometry by 1.5× per conversion and
+  // breaks pin alignment everywhere stored dimensions are used.
+  const rasterScale = 1.5;
+  const baseViewport = page.getViewport({ scale: 1.0 });
+  const geometry = grayscalePageGeometry(baseViewport.width, baseViewport.height, rasterScale);
+  const viewport = page.getViewport({ scale: rasterScale });
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: false });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  canvas.width = geometry.canvasWidth;
+  canvas.height = geometry.canvasHeight;
   await page.render({
     // @ts-ignore
     canvasContext: ctx,
@@ -76,16 +83,17 @@ export async function convertPdfToGrayscale(base64PdfDataUrl: string): Promise<s
     ctx.putImageData(imageData, 0, 0);
   }
 
-  // Build new PDF with pdfmake at exact page size, no margins
+  // Build new PDF with pdfmake at the ORIGINAL page size, no margins.
+  // The higher-resolution raster is placed scaled down to fill the page.
   const pngDataUrl = canvas.toDataURL('image/png');
   const docDefinition = {
-    pageSize: { width: viewport.width, height: viewport.height },
+    pageSize: { width: geometry.pageWidth, height: geometry.pageHeight },
     pageMargins: [0, 0, 0, 0],
     content: [
       {
         image: pngDataUrl,
-        width: viewport.width,
-        height: viewport.height
+        width: geometry.imageWidth,
+        height: geometry.imageHeight
       }
     ]
   } as any;

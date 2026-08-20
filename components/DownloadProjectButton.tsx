@@ -6,6 +6,7 @@ import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { usePDF } from '@/hooks/usePDF';
 import { convertPdfToGrayscale } from '@/utils/pdfGrayscale';
+import { normalizePinCoords } from '@/utils/planCoordinates';
 
 // @ts-ignore
 const generatePinPreviewImage = async (pdfjs, plan, point, pointIndex, size = 300, zoomLevel = 2) => {
@@ -255,9 +256,12 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
       const planFileName = `plan_${plan.name?.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
       // @ts-ignore
       return plan.points.flatMap(point => {
-        // Calculate normalized coordinates
-        const normalizedX = planWidth ? (point.x / planWidth) : 0;
-        const normalizedY = planHeight ? (point.y / planHeight) : 0;
+        // Pin coords live in dimensions × displayScale space
+        const { x: normalizedX, y: normalizedY } = normalizePinCoords(point, {
+          width: planWidth,
+          height: planHeight,
+          displayScale: plan.dimensions?.displayScale
+        });
 
         // Base data that will be common for all rows of this point
         const baseData = {
@@ -357,8 +361,12 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
 
       return planData.points.flatMap((pointData: any) => {
         const point = pointData.point;
-        const normalizedX = planWidth ? (point.x / planWidth) : 0;
-        const normalizedY = planHeight ? (point.y / planHeight) : 0;
+        // Pin coords live in dimensions × displayScale space
+        const { x: normalizedX, y: normalizedY } = normalizePinCoords(point, {
+          width: planWidth,
+          height: planHeight,
+          displayScale: plan.dimensions?.displayScale
+        });
 
         const baseData = {
           projectId: exportData.project.id,

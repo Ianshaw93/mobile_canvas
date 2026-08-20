@@ -1038,7 +1038,10 @@ class SyncService {
           thumbnail: thumbnail,
           width: serverPlan.width || 0,
           height: serverPlan.height || 0,
-          display_scale: serverPlan.display_scale || 1,
+          // Pins are always placed against a 1.5× render (PdfViewer), so a
+          // missing server display_scale must default to 1.5 — defaulting to 1
+          // made every overlay divide by the wrong space (1.5× pin drift).
+          display_scale: serverPlan.display_scale || 1.5,
           display_order: serverPlan.display_order,
           site_visit_number: serverPlan.site_visit_number,
           created_at: serverPlan.created_at,

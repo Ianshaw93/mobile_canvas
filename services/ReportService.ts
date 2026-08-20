@@ -1,4 +1,5 @@
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { normalizePinCoords } from '../utils/planCoordinates';
 
 interface Project {
   id: string;
@@ -28,6 +29,7 @@ interface Plan {
   dimensions?: {
     width: number;
     height: number;
+    displayScale?: number;
   };
 }
 
@@ -120,9 +122,13 @@ const generateProjectCsv = async (project: Project, plans: Plan[], folderName: s
       const planHeight = plan.dimensions?.height || 0;
       
       for (const point of plan.points) {
-        // Calculate normalized coordinates (0-1)
-        const pointXNormalized = planWidth ? point.x / planWidth : 0;
-        const pointYNormalized = planHeight ? point.y / planHeight : 0;
+        // Calculate normalized coordinates (0-1); pin coords live in
+        // dimensions × displayScale space
+        const { x: pointXNormalized, y: pointYNormalized } = normalizePinCoords(point, {
+          width: planWidth,
+          height: planHeight,
+          displayScale: plan.dimensions?.displayScale
+        });
         
         // Add a row for the point itself, even if it has no images
         const basePoint: CsvPoint = {

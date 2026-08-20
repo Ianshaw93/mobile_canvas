@@ -24,6 +24,7 @@ import type { DBProject, DBPlan, DBPoint, DBImage } from '@/services/database';
 import { v4 as uuidv4 } from 'uuid';
 import { processImageData } from '@/utils/imageProcessing';
 import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { computeDimensionRepair, rescueLegacyPin, VIEWER_DISPLAY_SCALE } from '@/utils/planCoordinates';
 import { Preferences } from '@capacitor/preferences';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
@@ -170,6 +171,7 @@ interface SiteState {
     }>;
   }>;
   runGrayscaleMigrationIfNeeded: () => Promise<void>;
+  runDimensionRepairIfNeeded: () => Promise<void>;
 }
 
 // Helper functions to convert between DB and UI types
@@ -222,8 +224,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
     isChecking: false,
     error: null 
   },
-  // Placeholder; real implementation is injected below via setState
+  // Placeholders; real implementations are injected below via setState
   runGrayscaleMigrationIfNeeded: async () => {},
+  runDimensionRepairIfNeeded: async () => {},
 
   updateProject: async (id: string, updates: { name?: string; clientName?: string; siteVisitNumber?: number; engineerName?: string }) => {
     try {
@@ -301,6 +304,9 @@ const useSiteStore = create<SiteState>((set, get) => ({
       
       // Run grayscale migration at startup (once)
       await get().runGrayscaleMigrationIfNeeded();
+      // Reconcile stored plan dimensions with actual PDF page sizes
+      // (repairs pin misalignment from historical grayscale page inflation)
+      await get().runDimensionRepairIfNeeded();
     } catch (error) {
       console.error('[Store] Error during initialization:', error);
       set({ isLoading: false, error: error instanceof Error ? error.message : 'Failed to initialize store' });
@@ -374,6 +380,7 @@ const useSiteStore = create<SiteState>((set, get) => ({
       set({ projects });
 
       await useSiteStore.getState().runGrayscaleMigrationIfNeeded();
+      await useSiteStore.getState().runDimensionRepairIfNeeded();
     } catch (error) {
       console.error('[Store] Error loading projects:', error);
       throw error;
@@ -1343,6 +1350,35 @@ async function generateGrayscaleThumbnailFromPdf(pdfDataUrlOrBase64: string): Pr
   return canvas.toDataURL();
 }
 
+// Helper: read the scale-1.0 page size of a PDF (data URL or base64)
+async function readPdfPageSize(pdfDataUrlOrBase64: string): Promise<{ width: number; height: number }> {
+  // @ts-ignore
+  const pdfjs = await import('pdfjs-dist/build/pdf');
+  // @ts-ignore
+  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+  const base64 = pdfDataUrlOrBase64.includes(',')
+    ? pdfDataUrlOrBase64.split(',')[1]
+    : pdfDataUrlOrBase64;
+  const binaryString = typeof atob === 'function' ? atob(base64) : '';
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  // @ts-ignore
+  const loadingTask = pdfjs.getDocument({ data: bytes.buffer });
+  const pdf = await loadingTask.promise;
+  try {
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.0 });
+    return { width: viewport.width, height: viewport.height };
+  } finally {
+    try { await pdf.destroy(); } catch { /* best-effort cleanup */ }
+  }
+}
+
+let dimensionRepairInFlight = false;
+
 // Extend the store with a runtime migration
 // Note: defined after the store; reference via useSiteStore.getState()
 // @ts-ignore
@@ -1408,6 +1444,150 @@ useSiteStore.setState((state: any) => ({
       }
     } catch (e) {
       console.error('Error running grayscale migration at startup:', e);
+    }
+  },
+
+  // Repair migration for pin misalignment: historical grayscale conversion
+  // rebuilt PDFs with page geometry inflated 1.5× per conversion, while
+  // plan dimensions kept the original file's size. Pins are stored relative
+  // to a render of plan.url, so every consumer that divides by stored
+  // dimensions (project-page overlay, CSV normalization, backend reports)
+  // drifted. The contract is: dimensions === actual scale-1.0 page size of
+  // plan.url. This reconciles stored dimensions to that; pins are untouched.
+  // Runs per-plan and is idempotent; a verified cache (plan id -> url length)
+  // avoids re-parsing unchanged PDFs on every startup while still catching
+  // plans whose PDF changes (e.g. pulled from the server).
+  runDimensionRepairIfNeeded: async () => {
+    if (typeof window === 'undefined') return;
+    if (dimensionRepairInFlight) return;
+    dimensionRepairInFlight = true;
+    try {
+      const cacheKey = 'dimension_repair_verified_v1';
+      let verified: Record<string, number> = {};
+      try {
+        const pref = await Preferences.get({ key: cacheKey });
+        if (pref.value) verified = JSON.parse(pref.value);
+      } catch {
+        try {
+          verified = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+        } catch { verified = {}; }
+      }
+
+      const { projects } = useSiteStore.getState();
+      const currentPlanIds = new Set<string>();
+      let cacheChanged = false;
+
+      for (const project of projects || []) {
+        for (const plan of (project?.plans || [])) {
+          if (typeof plan?.url !== 'string' || !plan.url) continue;
+          currentPlanIds.add(plan.id);
+          if (verified[plan.id] === plan.url.length) continue;
+
+          try {
+            const actual = await readPdfPageSize(plan.url);
+            const stored = {
+              width: plan.dimensions?.width || 0,
+              height: plan.dimensions?.height || 0
+            };
+            const repair = computeDimensionRepair(actual, stored);
+            // Pins are always placed against a 1.5× render of plan.url, so
+            // any other stored displayScale is wrong data (e.g. plans pulled
+            // while the server record had no display_scale defaulted to 1).
+            const displayScaleWrong =
+              plan.dimensions?.displayScale !== VIEWER_DISPLAY_SCALE;
+
+            if (repair.needsRepair || displayScaleWrong) {
+              console.log(
+                `[DimensionRepair] Plan ${plan.id}: stored ${stored.width}x${stored.height} ds=${plan.dimensions?.displayScale} -> ${repair.width}x${repair.height} ds=${VIEWER_DISPLAY_SCALE}`
+              );
+              const planUpdates: any = {};
+              if (repair.needsRepair) {
+                planUpdates.width = repair.width;
+                planUpdates.height = repair.height;
+              }
+              if (displayScaleWrong) {
+                planUpdates.display_scale = VIEWER_DISPLAY_SCALE;
+              }
+              await database.updatePlan(plan.id, planUpdates);
+
+              // Pins provably placed before the inflating code existed are in
+              // the pre-inflation space; scale them into the current one.
+              const rescuedById = new Map<string, { x: number; y: number }>();
+              if (repair.needsRepair && stored.width > 0) {
+                const ratio = repair.width / stored.width;
+                for (const pt of plan.points || []) {
+                  const rescued = rescueLegacyPin(pt, ratio);
+                  if (rescued.needsRescale) {
+                    await database.updatePointPartial(pt.id, {
+                      x: rescued.x,
+                      y: rescued.y
+                    });
+                    rescuedById.set(pt.id, { x: rescued.x, y: rescued.y });
+                  }
+                }
+                if (rescuedById.size > 0) {
+                  console.log(
+                    `[DimensionRepair] Plan ${plan.id}: rescaled ${rescuedById.size} pre-grayscale pins by ${ratio.toFixed(3)}`
+                  );
+                }
+              }
+
+              useSiteStore.setState((prev: any) => ({
+                projects: prev.projects.map((p: any) =>
+                  p.id === project.id
+                    ? {
+                        ...p,
+                        plans: p.plans.map((pl: any) =>
+                          pl.id === plan.id
+                            ? {
+                                ...pl,
+                                dimensions: {
+                                  ...pl.dimensions,
+                                  width: repair.width,
+                                  height: repair.height,
+                                  displayScale: VIEWER_DISPLAY_SCALE
+                                },
+                                points: (pl.points || []).map((pt: any) =>
+                                  rescuedById.has(pt.id)
+                                    ? { ...pt, ...rescuedById.get(pt.id) }
+                                    : pt
+                                )
+                              }
+                            : pl
+                        )
+                      }
+                    : p
+                )
+              }));
+            }
+            verified[plan.id] = plan.url.length;
+            cacheChanged = true;
+          } catch (e) {
+            console.warn('[DimensionRepair] Could not verify plan', plan?.id, e);
+          }
+        }
+      }
+
+      // Prune cache entries for deleted plans
+      for (const id of Object.keys(verified)) {
+        if (!currentPlanIds.has(id)) {
+          delete verified[id];
+          cacheChanged = true;
+        }
+      }
+
+      if (cacheChanged) {
+        const serialized = JSON.stringify(verified);
+        try {
+          await Preferences.set({ key: cacheKey, value: serialized });
+        } catch {
+          localStorage.setItem(cacheKey, serialized);
+        }
+      }
+    } catch (e) {
+      console.error('Error running dimension repair at startup:', e);
+    } finally {
+      dimensionRepairInFlight = false;
     }
   }
 }));
