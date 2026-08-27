@@ -62,9 +62,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
       const renderTask = page.render(renderContext);
       await renderTask.promise;
-      // Rendered as-is: colour on the plan (services, fire strategy shading,
-      // highlighted escape routes) is exactly what engineers need to read on
-      // site, so the viewer never desaturates the page.
+      // Render in the PDF's own colours: on site, coloured detail in the
+      // original drawing is often the whole point of zooming in. Greyscale
+      // remains an export concern (DownloadProjectButton), not a viewer one.
 
       // // Convert the rendered PDF on the canvas to an image URL
       // const imageUrl = canvas.toDataURL('image/png');
