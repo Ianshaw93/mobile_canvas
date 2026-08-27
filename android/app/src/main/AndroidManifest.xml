@@ -54,5 +54,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- In-app updates: the app is sideloaded from GitHub Releases, not Play,
+         so it launches the package installer itself. Android 8+ additionally
+         requires the user to grant "Install unknown apps" for this app. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
 </manifest>

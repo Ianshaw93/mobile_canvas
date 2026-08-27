@@ -28,6 +28,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The in-app updater treats the release tag as the versionCode of the
+      # attached APK. A tag that doesn't match build.gradle either re-prompts
+      # every device forever (tag too high) or is never offered (tag too low
+      # or malformed). Fail fast, before the ten-minute build.
+      - name: Verify release tag matches versionCode
+        if: inputs.release_tag != ''
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if ! echo "$TAG" | grep -qE '^v[0-9]+$'; then
+            echo "::error::release_tag must be exactly vN (got '$TAG') — the updater skips anything else."
+            exit 1
+          fi
+          CODE=$(grep -oP 'versionCode\s+\K[0-9]+' android/app/build.gradle | head -1)
+          if [ "v$CODE" != "$TAG" ]; then
+            echo "::error::release_tag '$TAG' does not match versionCode $CODE in android/app/build.gradle."
+            exit 1
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20

@@ -18,6 +18,12 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception e) {
             Log.e(TAG, "Failed to register ContentUriReaderPlugin", e);
         }
+        try {
+            registerPlugin(ApkInstallerPlugin.class);
+            Log.d(TAG, "ApkInstallerPlugin registered successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register ApkInstallerPlugin", e);
+        }
         super.onCreate(savedInstanceState);
         Log.d(TAG, "MainActivity.onCreate completed");
     }

@@ -32,3 +32,22 @@ No local Android tooling is needed. GitHub Actions does everything:
    that's set, download the `site-right-apk` artifact and `gh release create` manually.
 3. Before distributing, verify the built APK's signing cert SHA-256 matches the
    fingerprint above (any APK inspection tool; the cert is `META-INF/KEY0.RSA`).
+
+### The release tag is load-bearing (v20+)
+
+Since v20 the app updates itself from these releases (`services/UpdateService.ts`).
+It reads the GitHub Releases API on `Ianshaw93/fd-mobile-releases` and treats the
+tag `vN` as the APK's `versionCode`. So:
+
+- **Tag must be exactly `vN` and N must equal `versionCode`.** Anything else
+  (`v20.1`, `19-hotfix`), a draft, a prerelease, or a release with no `.apk`
+  asset is skipped silently — the fleet just never sees it. The Build APK
+  workflow refuses to release when the tag doesn't match `versionCode` in
+  `android/app/build.gradle`, so a mismatch can only happen on a hand-published
+  release.
+- **Keep uploading `app-release.apk`.** Any `.apk` works as a fallback, but that
+  is the name the workflow produces and the updater prefers.
+- The repo must stay **public** — the app calls the API anonymously so that no
+  token has to ship inside the APK.
+- Signing with a different keystore doesn't just break manual installs, it breaks
+  every in-app update too.
