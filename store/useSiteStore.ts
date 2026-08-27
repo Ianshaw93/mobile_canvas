@@ -23,7 +23,7 @@ import { database } from '@/services/database';
 import type { DBProject, DBPlan, DBPoint, DBImage } from '@/services/database';
 import { v4 as uuidv4 } from 'uuid';
 import { processImageData } from '@/utils/imageProcessing';
-import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
 import { computeDimensionRepair, rescueLegacyPin, VIEWER_DISPLAY_SCALE } from '@/utils/planCoordinates';
 import { Preferences } from '@capacitor/preferences';
 // TODO: offline queue actioned only on button press -> goes through series until empty
@@ -1384,67 +1384,21 @@ let dimensionRepairInFlight = false;
 // @ts-ignore
 useSiteStore.setState((state: any) => ({
   ...state,
+  // Retired. This rewrote every stored plan PDF to grayscale on startup and
+  // is destructive and irreversible: it overwrote plan.url in place, and no
+  // colour original is kept anywhere (the plans table has a single url
+  // column, the offline queue's File does not survive an app restart, and
+  // push uploads plan.url, so the server copy would be greyed too). Its
+  // Preferences flag ('grayscale_migration_v3_done') is only set on devices
+  // that already ran it, so on a fresh install or after clearing app data it
+  // would fire again and grey every plan permanently - including the Word
+  // report, which renders from plan.url.
+  //
+  // Kept as an inert no-op with its call sites intact so this note stays on
+  // the code path. Use "Replace PDF" in management mode to restore a colour
+  // plan. Do not reinstate without a stored colour original.
   runGrayscaleMigrationIfNeeded: async () => {
-    try {
-      // Skip in SSR
-      if (typeof window === 'undefined') return;
-      const flagKey = 'grayscale_migration_v3_done';
-      
-      // Use Capacitor Preferences when available
-      let alreadyDone = false;
-      try {
-        const pref = await Preferences.get({ key: flagKey });
-        alreadyDone = !!pref.value;
-      } catch {
-        alreadyDone = !!localStorage.getItem(flagKey);
-      }
-      if (alreadyDone) return;
-
-      const { projects } = useSiteStore.getState();
-      let changed = false;
-
-      for (const project of projects || []) {
-        for (const plan of (project?.plans || [])) {
-          if (typeof plan?.url !== 'string') continue;
-          try {
-            const grayUrl = await convertPdfToGrayscale(plan.url);
-            const newThumb = await generateGrayscaleThumbnailFromPdf(grayUrl);
-
-            if (grayUrl && (grayUrl !== plan.url || newThumb !== plan.thumbnail)) {
-              await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
-              // Update in-memory state
-              useSiteStore.setState((prev: any) => ({
-                projects: prev.projects.map((p: any) =>
-                  p.id === project.id
-                    ? {
-                        ...p,
-                        plans: p.plans.map((pl: any) =>
-                          pl.id === plan.id ? { ...pl, url: grayUrl, thumbnail: newThumb } : pl
-                        )
-                      }
-                    : p
-                )
-              }));
-              changed = true;
-            }
-          } catch (e) {
-            console.warn('Grayscale conversion failed for plan during startup migration:', plan?.id, e);
-          }
-        }
-      }
-
-      if (changed) {
-        console.log('Grayscale migration updated plans; state refreshed.');
-      }
-
-      try {
-        await Preferences.set({ key: flagKey, value: '1' });
-      } catch {
-        localStorage.setItem(flagKey, '1');
-      }
-    } catch (e) {
-      console.error('Error running grayscale migration at startup:', e);
-    }
+    return;
   },
 
   // Repair migration for pin misalignment: historical grayscale conversion

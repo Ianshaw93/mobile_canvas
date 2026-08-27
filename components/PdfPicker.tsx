@@ -12,7 +12,7 @@ import DownloadProjectButton from './DownloadProjectButton';
 import ImportProjectButton from './ImportProjectButton';
 import SupportBundleButton from './SupportBundleButton';
 import SyncButton from './SyncButton';
-import { convertPdfToGrayscale, grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
 import { database } from '@/services/database';
 
 type Dimensions = {
@@ -88,7 +88,7 @@ const PdfPicker = () => {
   const [proposedPlanName, setProposedPlanName] = useState<string>('');
   const [pendingPlanData, setPendingPlanData] = useState<null | {
     planId: string;
-    grayscalePDF: string;
+    planPDF: string;
     thumbnail: string;
     width: number;
     height: number;
@@ -161,15 +161,11 @@ const PdfPicker = () => {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file && pdfCanvasRef.current) {
-      // Save the original PDF data without modification
+      // Store the PDF exactly as imported. It used to be rebuilt as a
+      // grayscale 1.5x raster here, which both stripped the colour engineers
+      // need on site and destroyed vector sharpness when zooming. Exports are
+      // still greyscaled at export time (DownloadProjectButton).
       const base64PDF = await blobToBase64(file);
-      // Convert to grayscale PDF for storage/display/export
-      let grayscalePDF = base64PDF;
-      try {
-        grayscalePDF = await convertPdfToGrayscale(base64PDF);
-      } catch (e) {
-        console.warn('Grayscale conversion failed, storing original PDF:', e);
-      }
       const projectId = selectedProjectId;
       const planId = `${Date.now()}`;
       
@@ -217,14 +213,15 @@ const PdfPicker = () => {
           };
           const renderTask = page.render(renderContext);
           await renderTask.promise;
-          // Ensure thumbnail appears grayscale too
+          // Thumbnails stay greyscale by design; only the plan itself
+          // (plan.url, what the viewer renders) carries colour.
           grayscaleCanvasInPlace(canvas);
           const thumbnail = canvas.toDataURL();
 
           // Stash data and prompt for a name (blank by default)
           setPendingPlanData({
             planId,
-            grayscalePDF,
+            planPDF: base64PDF,
             thumbnail,
             width: originalViewport.width,
             height: originalViewport.height,
@@ -251,7 +248,7 @@ const PdfPicker = () => {
     const newPlan = {
       id: pendingPlanData.planId,
       name: trimmed,
-      url: pendingPlanData.grayscalePDF,
+      url: pendingPlanData.planPDF,
       thumbnail: pendingPlanData.thumbnail,
       dimensions: {
         width: pendingPlanData.width,
@@ -264,7 +261,7 @@ const PdfPicker = () => {
       projectId: pendingPlanData.projectId
     };
 
-    addCanvasRef(newPlan.id, pdfCanvasRef.current, pendingPlanData.grayscalePDF);
+    addCanvasRef(newPlan.id, pdfCanvasRef.current, pendingPlanData.planPDF);
     await addPlan(selectedProjectId, newPlan);
     setPreviewImage(true);
 
@@ -550,7 +547,7 @@ const PdfPicker = () => {
 
       <canvas ref={pdfCanvasRef} className="hidden" />
 
-      {/* One-time migration: convert existing plan PDFs to grayscale */}
+      {/* Retired grayscale migration - inert, see MigrationRunner below */}
       {mounted && (
         <MigrationRunner projects={projects} />
       )}
@@ -787,72 +784,17 @@ const PdfPicker = () => {
 
 export default PdfPicker;
 
-// Background component to run one-time migration of existing PDFs to grayscale
-const MigrationRunner: React.FC<{ projects: any[] }> = ({ projects }) => {
-  useEffect(() => {
-    const flagKey = 'grayscale_migration_v2_done';
-    if (typeof window === 'undefined') return;
-    if (localStorage.getItem(flagKey)) return;
-
-    const run = async () => {
-      try {
-        // Lazy import pdf.js for thumbnail generation
-        // @ts-ignore
-        const pdfjs = await import('pdfjs-dist/build/pdf');
-        // @ts-ignore
-        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-        const renderGrayThumbnail = async (pdfDataUrlOrBase64: string) => {
-          // Accept data URL or raw base64
-          const base64 = pdfDataUrlOrBase64.includes(',')
-            ? pdfDataUrlOrBase64.split(',')[1]
-            : pdfDataUrlOrBase64;
-          const bin = typeof atob === 'function' ? atob(base64) : '';
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          // @ts-ignore
-          const loadingTask = pdfjs.getDocument({ data: bytes.buffer });
-          const pdf = await loadingTask.promise;
-          const page = await pdf.getPage(1);
-          const scale = 1.5;
-          const viewport = page.getViewport({ scale });
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d', { alpha: false });
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise;
-          grayscaleCanvasInPlace(canvas);
-          return canvas.toDataURL();
-        };
-
-        for (const project of projects || []) {
-          for (const plan of (project?.plans || [])) {
-            if (typeof plan?.url === 'string') {
-              try {
-                const grayUrl = await convertPdfToGrayscale(plan.url);
-                const newThumb = await renderGrayThumbnail(grayUrl);
-                if (grayUrl && grayUrl !== plan.url) {
-                  await database.updatePlan(plan.id, { url: grayUrl, thumbnail: newThumb });
-                } else if (newThumb && newThumb !== plan.thumbnail) {
-                  await database.updatePlan(plan.id, { thumbnail: newThumb });
-                }
-              } catch (e) {
-                console.warn('Failed to grayscale plan', plan?.id, e);
-              }
-            }
-          }
-        }
-        await useSiteStore.getState().loadProjects();
-        localStorage.setItem(flagKey, '1');
-      } catch (e) {
-        console.error('Grayscale migration failed:', e);
-      }
-    };
-
-    // Defer to allow initial UI render
-    setTimeout(run, 0);
-  }, [projects]);
-
-  return null;
-};
-
+// Historical one-time migration that rewrote every stored plan PDF to
+// grayscale. Deliberately neutered rather than deleted.
+//
+// It is destructive and irreversible: it overwrote plan.url in place, and the
+// colour original is not kept anywhere (the plans table has a single url
+// column, the offline queue's File does not survive an app restart, and push
+// uploads plan.url, so the server copy would be greyed too). Its localStorage
+// flag is only set on devices that already ran it, so on a fresh install or
+// after clearing app data it would fire again and permanently grey every
+// plan — including the Word report, which renders from plan.url.
+//
+// The component is kept mounted and inert so this note stays attached to the
+// code path. Use "Replace PDF" in management mode to restore a colour plan.
+const MigrationRunner: React.FC<{ projects: any[] }> = () => null;
