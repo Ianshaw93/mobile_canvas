@@ -22,6 +22,7 @@ import {
   shouldPromptForUpdate,
   isDowngrade,
   formatBytes,
+  resolveInstallRoute,
   GithubRelease,
 } from '../appVersion';
 
@@ -202,6 +203,51 @@ describe('formatBytes', () => {
     expect(formatBytes(null)).toBe('unknown size');
     expect(formatBytes(undefined)).toBe('unknown size');
     expect(formatBytes(NaN)).toBe('unknown size');
+  });
+});
+
+describe('resolveInstallRoute', () => {
+  // One function decides what tapping a release row does, so the launch
+  // prompt and the Updates screen cannot diverge — and so the two paths that
+  // can never succeed (web installs, in-app downgrades) are unreachable.
+  const releases = normalizeReleases([release('v18'), release('v19'), release('v20')]);
+  const find = (tag: string) => releases.find((r) => r.tag === tag)!;
+
+  it('routes a newer release to the in-app installer on native', () => {
+    expect(resolveInstallRoute({ release: find('v20'), currentCode: 19, isNative: true })).toBe(
+      'in-app'
+    );
+  });
+
+  it('routes a downgrade to a browser download — Android refuses in-app downgrades', () => {
+    // The in-app path downloads into app-private cache, then fires an install
+    // Android rejects with INSTALL_FAILED_VERSION_DOWNGRADE; uninstalling (the
+    // only way back) wipes that cache. A browser download lands in public
+    // Downloads and survives the uninstall.
+    expect(resolveInstallRoute({ release: find('v18'), currentCode: 19, isNative: true })).toBe(
+      'browser'
+    );
+  });
+
+  it('offers nothing for the version already installed', () => {
+    expect(resolveInstallRoute({ release: find('v19'), currentCode: 19, isNative: true })).toBe(
+      'none'
+    );
+  });
+
+  it('offers nothing on web, where the installer stub can only throw', () => {
+    expect(resolveInstallRoute({ release: find('v20'), currentCode: null, isNative: false })).toBe(
+      'none'
+    );
+    expect(resolveInstallRoute({ release: find('v18'), currentCode: null, isNative: false })).toBe(
+      'none'
+    );
+  });
+
+  it('still offers the in-app installer on native when the running build is unreadable', () => {
+    expect(resolveInstallRoute({ release: find('v20'), currentCode: null, isNative: true })).toBe(
+      'in-app'
+    );
   });
 });
 

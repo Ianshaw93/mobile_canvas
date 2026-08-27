@@ -37,6 +37,21 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FETCH_TIMEOUT_MS = 12000;
 const APK_CACHE_DIR = 'updates';
 
+/**
+ * A cache this fresh is served without hitting GitHub at all. The API is
+ * called anonymously (60 requests/hour/IP, shared behind site NAT), and the
+ * common prompt → Updates-screen hop otherwise refetches the identical
+ * payload seconds after the launch check cached it.
+ */
+export const RELEASE_CACHE_FRESH_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * The offline fallback's staleness bound. Deleting a release from GitHub is
+ * the bad-release remediation; a cache older than this must stop offering it
+ * rather than presenting a dead download URL forever.
+ */
+export const RELEASE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 export interface CurrentVersion {
   /** versionName, e.g. "v19". Display only. */
   name: string;
@@ -54,6 +69,9 @@ export class UpdatePermissionRequired extends Error {
   constructor() {
     super('PERMISSION_REQUIRED');
     this.name = 'UpdatePermissionRequired';
+    // Compiling `extends Error` to ES5 breaks the prototype chain, which
+    // silently turns every `instanceof UpdatePermissionRequired` check false.
+    Object.setPrototypeOf(this, UpdatePermissionRequired.prototype);
   }
 }
 
@@ -89,38 +107,73 @@ async function fetchReleasesFromGithub(): Promise<AppRelease[]> {
   }
 }
 
-async function readCachedReleases(): Promise<AppRelease[]> {
+interface ReleaseCacheEntry {
+  savedAt: number;
+  releases: AppRelease[];
+}
+
+async function readReleaseCache(): Promise<ReleaseCacheEntry | null> {
   try {
     const { value } = await Preferences.get({ key: CACHED_RELEASES_KEY });
-    if (!value) return [];
+    if (!value) return null;
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as AppRelease[]) : [];
+    // The pre-TTL format was a bare array with no timestamp; its age cannot
+    // be bounded, so it is treated as absent rather than served forever.
+    if (
+      !parsed ||
+      typeof parsed.savedAt !== 'number' ||
+      !Number.isFinite(parsed.savedAt) ||
+      !Array.isArray(parsed.releases)
+    ) {
+      return null;
+    }
+    return parsed as ReleaseCacheEntry;
   } catch {
-    return [];
+    return null;
   }
+}
+
+export interface ReleasesResult {
+  releases: AppRelease[];
+  fromCache: boolean;
+  /** When the served list was actually fetched from GitHub, for "as of" UI. */
+  cachedAt: number | null;
+  error: string | null;
 }
 
 /**
  * Fetch the installable releases, newest first.
  *
- * Falls back to the last successful fetch when offline — engineers are
- * routinely on site with no signal, and an empty Updates screen looks broken.
+ * A cache younger than {@link RELEASE_CACHE_FRESH_MS} is served as-is unless
+ * `force` is set (the Updates screen's Refresh). On fetch failure the last
+ * successful fetch is served — engineers are routinely on site with no
+ * signal, and an empty Updates screen looks broken — but only up to
+ * {@link RELEASE_CACHE_MAX_AGE_MS}, so a release deleted from GitHub stops
+ * being offered.
  */
-export async function getReleases(options: { force?: boolean } = {}): Promise<{
-  releases: AppRelease[];
-  fromCache: boolean;
-  error: string | null;
-}> {
+export async function getReleases(options: { force?: boolean } = {}): Promise<ReleasesResult> {
+  const cache = await readReleaseCache();
+
+  if (!options.force && cache && Date.now() - cache.savedAt < RELEASE_CACHE_FRESH_MS) {
+    return { releases: cache.releases, fromCache: true, cachedAt: cache.savedAt, error: null };
+  }
+
   try {
     const releases = await fetchReleasesFromGithub();
-    await Preferences.set({ key: CACHED_RELEASES_KEY, value: JSON.stringify(releases) });
-    await Preferences.set({ key: LAST_CHECK_KEY, value: String(Date.now()) });
-    return { releases, fromCache: false, error: null };
+    const savedAt = Date.now();
+    await Preferences.set({
+      key: CACHED_RELEASES_KEY,
+      value: JSON.stringify({ savedAt, releases }),
+    });
+    await Preferences.set({ key: LAST_CHECK_KEY, value: String(savedAt) });
+    return { releases, fromCache: false, cachedAt: savedAt, error: null };
   } catch (error) {
-    const cached = await readCachedReleases();
     const message = error instanceof Error ? error.message : 'Update check failed';
     console.warn('[UpdateService] Release check failed', error);
-    return { releases: cached, fromCache: cached.length > 0, error: message };
+    if (cache && Date.now() - cache.savedAt <= RELEASE_CACHE_MAX_AGE_MS) {
+      return { releases: cache.releases, fromCache: true, cachedAt: cache.savedAt, error: message };
+    }
+    return { releases: [], fromCache: false, cachedAt: cache?.savedAt ?? null, error: message };
   }
 }
 
@@ -199,12 +252,33 @@ async function clearApkCache(keepFile?: string): Promise<void> {
  * Returns the on-disk path. Progress is reported per chunk so the user can see
  * a 15 MB download moving on a weak site connection.
  */
+/**
+ * A previous download of this exact release, still fully on disk. Cancelling
+ * the system installer (or leaving for the permission settings) deliberately
+ * keeps the APK; retrying must reuse it rather than pull ~15 MB again. Only a
+ * file whose size matches the release asset exactly counts — anything else is
+ * a partial download.
+ */
+async function findExistingApk(path: string, expectedSize: number | null): Promise<string | null> {
+  if (!expectedSize) return null;
+  try {
+    const stat = await Filesystem.stat({ path, directory: Directory.Cache });
+    if (stat.size === expectedSize && stat.uri) return stat.uri;
+  } catch {
+    // Not downloaded yet.
+  }
+  return null;
+}
+
 export async function downloadRelease(
   release: AppRelease,
   onProgress?: (progress: DownloadProgress) => void
 ): Promise<string> {
   const fileName = `site-right-${release.tag}.apk`;
   const path = `${APK_CACHE_DIR}/${fileName}`;
+
+  const existing = await findExistingApk(path, release.apkSize);
+  if (existing) return existing;
 
   await clearApkCache(fileName);
 
@@ -252,15 +326,22 @@ export async function downloadRelease(
  * apps" yet — the caller should offer to open that settings screen.
  */
 export async function installRelease(path: string): Promise<void> {
-  const { canInstall } = await ApkInstaller.canInstall();
+  const { canInstall, needsPermission } = await ApkInstaller.canInstall();
   if (!canInstall) {
-    throw new UpdatePermissionRequired();
+    // Only offer the permission round-trip when the OS says a grant would
+    // actually help. The web stub answers { canInstall: false,
+    // needsPermission: false } — a permission panel there is a dead end.
+    if (needsPermission) throw new UpdatePermissionRequired();
+    throw new Error('Installing updates is not available on this device.');
   }
   try {
     await ApkInstaller.install({ path });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes('PERMISSION_REQUIRED')) {
+    // Route on Capacitor's structured reject code (PluginCall.reject(message,
+    // code) → CapacitorException.code), never on message text — the native
+    // message is free to be reworded.
+    const code = (error as { code?: string } | null)?.code;
+    if (code === 'PERMISSION_REQUIRED') {
       throw new UpdatePermissionRequired();
     }
     throw error;
