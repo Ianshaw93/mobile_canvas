@@ -34,6 +34,13 @@ public class ApkInstallerPlugin extends Plugin {
     private static final String TAG = "ApkInstaller";
     private static final String APK_MIME = "application/vnd.android.package-archive";
 
+    /**
+     * Structured reject code for a missing "Install unknown apps" grant. The
+     * TypeScript side routes on this code (CapacitorException.code), never on
+     * the human-readable message, so the message is free to be reworded.
+     */
+    private static final String CODE_PERMISSION_REQUIRED = "PERMISSION_REQUIRED";
+
     private boolean hasInstallPermission() {
         // Below Oreo the manifest permission is enough; there is no per-app toggle.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true;
@@ -84,7 +91,8 @@ public class ApkInstallerPlugin extends Plugin {
             }
 
             if (!hasInstallPermission()) {
-                call.reject("PERMISSION_REQUIRED");
+                call.reject("Android has not granted Site Right permission to install apps.",
+                        CODE_PERMISSION_REQUIRED);
                 return;
             }
 

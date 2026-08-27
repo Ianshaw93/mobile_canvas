@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { CurrentVersion, checkForUpdateOnLaunch, dismissUpdate } from '@/services/UpdateService';
 import { useReleaseInstaller } from '@/hooks/useReleaseInstaller';
-import { AppRelease, formatBytes } from '@/utils/appVersion';
+import InstallerStatus from '@/components/InstallerStatus';
+import { AppRelease } from '@/utils/appVersion';
 
 /**
  * Launch-time "there's a newer version" prompt.
@@ -67,70 +68,33 @@ const UpdatePrompt = () => {
           </p>
         )}
 
-        {installer.stage === 'downloading' && (
-          <div className="mt-4">
-            <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
-              <div
-                className="h-full bg-blue-600 transition-all"
-                style={{ width: `${installer.progress?.percent ?? 0}%` }}
-              />
-            </div>
-            <div className="mt-1 text-xs text-gray-500">
-              Downloading{' '}
-              {installer.progress
-                ? `${formatBytes(installer.progress.bytes)} of ${formatBytes(
-                    installer.progress.contentLength
-                  )}`
-                : `${formatBytes(release.apkSize)}`}
-            </div>
-          </div>
-        )}
+        <InstallerStatus
+          installer={installer}
+          release={release}
+          // Closing after the installer has opened is not "Later": it must not
+          // silence this release's prompt for good.
+          onClose={() => setRelease(null)}
+        />
 
-        {installer.stage === 'installing' && (
-          <div className="mt-4 text-sm text-gray-600">Opening the installer…</div>
-        )}
-
-        {installer.stage === 'permission' && (
-          <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            Android needs permission to install apps from Site Right. Turn on
-            &quot;Allow from this source&quot;, then come back and tap Update again.
+        {/* The done panel carries its own Close / Install again actions. */}
+        {installer.stage !== 'done' && (
+          <div className="mt-5 flex gap-2">
             <button
-              onClick={installer.grantPermission}
-              className="mt-2 block w-full rounded bg-amber-600 px-3 py-2 text-white"
+              onClick={handleLater}
+              disabled={locked}
+              className="flex-1 rounded border border-gray-300 px-4 py-2 text-gray-700 disabled:opacity-50"
             >
-              Open permission settings
+              Later
+            </button>
+            <button
+              onClick={() => installer.start(release)}
+              disabled={locked}
+              className="flex-1 rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+            >
+              {busy ? 'Working…' : 'Update'}
             </button>
           </div>
         )}
-
-        {installer.stage === 'error' && (
-          <div className="mt-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-            {installer.error}
-            <button
-              onClick={() => installer.fallbackToBrowser(release)}
-              className="mt-2 block w-full rounded bg-red-600 px-3 py-2 text-white"
-            >
-              Download in browser instead
-            </button>
-          </div>
-        )}
-
-        <div className="mt-5 flex gap-2">
-          <button
-            onClick={handleLater}
-            disabled={locked}
-            className="flex-1 rounded border border-gray-300 px-4 py-2 text-gray-700 disabled:opacity-50"
-          >
-            Later
-          </button>
-          <button
-            onClick={() => installer.start(release)}
-            disabled={locked}
-            className="flex-1 rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-          >
-            {busy ? 'Working…' : 'Update'}
-          </button>
-        </div>
 
         <button
           onClick={() => {
