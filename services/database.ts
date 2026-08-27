@@ -423,6 +423,10 @@ class Database {
       setClauses.push('height = ?');
       values.push(updates.height);
     }
+    if (updates.display_scale !== undefined) {
+      setClauses.push('display_scale = ?');
+      values.push(updates.display_scale);
+    }
     if (updates.display_order !== undefined) {
       setClauses.push('display_order = ?');
       values.push(updates.display_order);

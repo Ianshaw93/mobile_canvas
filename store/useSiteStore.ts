@@ -24,7 +24,7 @@ import type { DBProject, DBPlan, DBPoint, DBImage } from '@/services/database';
 import { v4 as uuidv4 } from 'uuid';
 import { processImageData } from '@/utils/imageProcessing';
 import { grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
-import { computeDimensionRepair, rescueLegacyPin, VIEWER_DISPLAY_SCALE } from '@/utils/planCoordinates';
+import { computeDimensionRepair, rescalePinForPageChange, rescueLegacyPin, VIEWER_DISPLAY_SCALE } from '@/utils/planCoordinates';
 import { Preferences } from '@capacitor/preferences';
 // TODO: offline queue actioned only on button press -> goes through series until empty
 
@@ -135,6 +135,17 @@ interface SiteState {
   requestStoragePermission: () => Promise<boolean>;
   addProject: (input: { name: string; clientName: string; siteVisitNumber: number; engineerName: string }) => Promise<string>;
   updatePlanName: (projectId: string, planId: string, newName: string) => Promise<void>;
+  replacePlanPdf: (
+    projectId: string,
+    planId: string,
+    replacement: {
+      url: string;
+      thumbnail: string;
+      width: number;
+      height: number;
+      rescalePins?: { ratioX: number; ratioY: number };
+    }
+  ) => Promise<void>;
   movePlanUp: (projectId: string, planId: string) => Promise<void>;
   movePlanDown: (projectId: string, planId: string) => Promise<void>;
   deletePlan: (projectId: string, planId: string) => Promise<void>;
@@ -966,6 +977,91 @@ const useSiteStore = create<SiteState>((set, get) => ({
     } catch (error) {
       console.error('Error updating plan name:', error);
       get().addToast?.('Failed to update plan name', 'error');
+      throw error;
+    }
+  },
+
+  // Swap a plan's PDF while keeping its pins, images and name.
+  //
+  // Dimensions are always written from the incoming page's scale-1.0 size:
+  // the coordinate-space contract is `dimensions === actual page size of
+  // plan.url`, and leaving stale dimensions behind would make the startup
+  // dimension repair "fix" them later and drag pins with it. `rescalePins`
+  // is supplied only when the caller has asked the user what to do about a
+  // page-size change; without it pin coordinates are left as they are.
+  replacePlanPdf: async (projectId, planId, replacement) => {
+    try {
+      const { url, thumbnail, width, height, rescalePins } = replacement;
+
+      await database.updatePlan(planId, {
+        url,
+        thumbnail,
+        width,
+        height,
+        display_scale: VIEWER_DISPLAY_SCALE
+      });
+
+      // Persist pin moves before touching in-memory state, so a failure
+      // throws before the UI claims pins moved. Every site visit's pins
+      // share this plan's coordinate space, so all of them move.
+      const plan = get().projects
+        .find(p => p.id === projectId)?.plans
+        .find(pl => pl.id === planId);
+      const movedById = new Map<string, { x: number; y: number }>();
+
+      if (rescalePins) {
+        for (const point of plan?.points || []) {
+          const moved = rescalePinForPageChange(point, rescalePins.ratioX, rescalePins.ratioY);
+          if (moved.x !== point.x || moved.y !== point.y) {
+            await database.updatePointPartial(point.id, { x: moved.x, y: moved.y });
+            movedById.set(point.id, moved);
+          }
+        }
+        if (movedById.size > 0) {
+          console.log(
+            `[ReplacePdf] Plan ${planId}: rescaled ${movedById.size} pins by ` +
+            `${rescalePins.ratioX.toFixed(3)}x${rescalePins.ratioY.toFixed(3)}`
+          );
+        }
+      }
+
+      set((state) => ({
+        projects: state.projects.map(project =>
+          project.id === projectId
+            ? {
+                ...project,
+                plans: project.plans.map(pl =>
+                  pl.id === planId
+                    ? {
+                        ...pl,
+                        url,
+                        thumbnail,
+                        dimensions: {
+                          ...pl.dimensions,
+                          width,
+                          height,
+                          displayScale: VIEWER_DISPLAY_SCALE
+                        },
+                        points: (pl.points || []).map(pt =>
+                          movedById.has(pt.id) ? { ...pt, ...movedById.get(pt.id)! } : pt
+                        )
+                      }
+                    : pl
+                )
+              }
+            : project
+        )
+      }));
+
+      get().addToast?.(
+        movedById.size > 0
+          ? `Plan PDF replaced; ${movedById.size} pin${movedById.size === 1 ? '' : 's'} rescaled`
+          : 'Plan PDF replaced successfully',
+        'success'
+      );
+    } catch (error) {
+      console.error('Error replacing plan PDF:', error);
+      get().addToast?.('Failed to replace plan PDF', 'error');
       throw error;
     }
   },

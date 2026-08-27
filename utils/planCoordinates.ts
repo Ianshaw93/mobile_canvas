@@ -117,6 +117,76 @@ export function normalizePinCoords(
   };
 }
 
+export type PageSizeComparison = {
+  /** Both axes agree within `tolerance` — pins can be kept as they are. */
+  matches: boolean;
+  /** Both page sizes are usable, so a ratio rescale is meaningful. */
+  canRescale: boolean;
+  /** incoming.width / stored.width (1 when a rescale is not meaningful). */
+  ratioX: number;
+  /** incoming.height / stored.height (1 when a rescale is not meaningful). */
+  ratioY: number;
+  /** The two ratios agree — a pure scale change that preserves the aspect. */
+  uniform: boolean;
+};
+
+/**
+ * Compare the scale-1.0 page size of a replacement PDF against a plan's
+ * stored dimensions, for the "Replace PDF" flow.
+ *
+ * Replacing a plan's PDF keeps its pins, and pins live in
+ * `dimensions x displayScale` space, so they only stay put when the two page
+ * sizes agree. When they do not, `ratioX`/`ratioY` are what
+ * `rescalePinForPageChange` needs to move pins into the incoming page's
+ * space, and `uniform` says whether that rescale can preserve the layout.
+ *
+ * Unusable sizes (zero/NaN — e.g. a PDF that failed to parse) never match and
+ * never offer a rescale.
+ */
+export function comparePlanPageSize(
+  incoming: PageSize,
+  stored: PageSize,
+  tolerance = 0.01
+): PageSizeComparison {
+  const usable = (s: PageSize) =>
+    Number.isFinite(s.width) && Number.isFinite(s.height) &&
+    s.width > 0 && s.height > 0;
+
+  if (!usable(incoming) || !usable(stored)) {
+    return { matches: false, canRescale: false, ratioX: 1, ratioY: 1, uniform: false };
+  }
+
+  const ratioX = incoming.width / stored.width;
+  const ratioY = incoming.height / stored.height;
+  const matches =
+    Math.abs(incoming.width - stored.width) / stored.width <= tolerance &&
+    Math.abs(incoming.height - stored.height) / stored.height <= tolerance;
+  const uniform = Math.abs(ratioX - ratioY) / Math.max(ratioX, ratioY) <= tolerance;
+
+  return { matches, canRescale: true, ratioX, ratioY, uniform };
+}
+
+/**
+ * Move a pin into a replacement page's coordinate space.
+ *
+ * Unlike `rescueLegacyPin` this is unconditional: the user has explicitly
+ * chosen to rescale while replacing the PDF, so every pin moves. Ratios that
+ * cannot describe a scale (non-finite, zero, negative) and coordinates that
+ * are not finite leave the pin untouched.
+ */
+export function rescalePinForPageChange(
+  pin: { x: number; y: number },
+  ratioX: number,
+  ratioY: number
+): { x: number; y: number } {
+  const usableRatio = (r: number) => Number.isFinite(r) && r > 0;
+  if (!usableRatio(ratioX) || !usableRatio(ratioY)) return { x: pin.x, y: pin.y };
+  return {
+    x: Number.isFinite(pin.x) ? pin.x * ratioX : pin.x,
+    y: Number.isFinite(pin.y) ? pin.y * ratioY : pin.y,
+  };
+}
+
 export type GrayscaleGeometry = {
   /** Page size (PDF points) of the rebuilt PDF — must equal the source page. */
   pageWidth: number;

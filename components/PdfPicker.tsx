@@ -13,6 +13,8 @@ import ImportProjectButton from './ImportProjectButton';
 import SupportBundleButton from './SupportBundleButton';
 import SyncButton from './SyncButton';
 import { grayscaleCanvasInPlace } from '@/utils/pdfGrayscale';
+import { comparePlanPageSize, VIEWER_DISPLAY_SCALE } from '@/utils/planCoordinates';
+import type { PageSizeComparison } from '@/utils/planCoordinates';
 import { database } from '@/services/database';
 
 type Dimensions = {
@@ -77,6 +79,8 @@ const PdfPicker = () => {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const updatePlanName = useSiteStore((state) => state.updatePlanName);
+  const replacePlanPdf = useSiteStore((state) => state.replacePlanPdf);
+  const addToast = useSiteStore((state) => state.addToast);
   const movePlanUp = useSiteStore((state) => state.movePlanUp);
   const movePlanDown = useSiteStore((state) => state.movePlanDown);
   const deletePlan = useSiteStore((state) => state.deletePlan);
@@ -85,6 +89,22 @@ const PdfPicker = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [movingPlanId, setMovingPlanId] = useState<string | null>(null);
   const [namePromptOpen, setNamePromptOpen] = useState<boolean>(false);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const [replacingPlanId, setReplacingPlanId] = useState<string | null>(null);
+  const [replaceBusy, setReplaceBusy] = useState<boolean>(false);
+  // Set only when the incoming PDF's page size differs from the plan's, so
+  // the engineer has to choose what happens to the pins before we commit.
+  const [pendingReplacement, setPendingReplacement] = useState<null | {
+    planId: string;
+    planName: string;
+    url: string;
+    thumbnail: string;
+    width: number;
+    height: number;
+    storedWidth: number;
+    storedHeight: number;
+    comparison: PageSizeComparison;
+  }>(null);
   const [proposedPlanName, setProposedPlanName] = useState<string>('');
   const [pendingPlanData, setPendingPlanData] = useState<null | {
     planId: string;
@@ -275,6 +295,123 @@ const PdfPicker = () => {
     setPendingPlanData(null);
     setProposedPlanName('');
     setNamePromptOpen(false);
+  };
+
+  // --- Replace PDF -------------------------------------------------------
+  // Swaps the PDF behind an existing plan while keeping its pins. Needed
+  // because plans imported before the colour fix were greyscaled in place
+  // with no colour original kept anywhere, and the only way back was to
+  // delete the plan and lose every pin on it.
+
+  const beginReplacePlanPdf = (planId: string) => {
+    setReplacingPlanId(planId);
+    // Clear any previous selection so re-picking the same file still fires.
+    if (replaceInputRef.current) replaceInputRef.current.value = '';
+    replaceInputRef.current?.click();
+  };
+
+  // Read the incoming PDF: its scale-1.0 page size (the pin coordinate-space
+  // contract) and a thumbnail rendered the same way the import path does.
+  const readReplacementPdf = async (file: File) => {
+    const base64PDF = await blobToBase64(file);
+    const objectUrl = URL.createObjectURL(file);
+    let pdf: any = null;
+    try {
+      // @ts-ignore
+      const loadingTask = pdfjs.getDocument(objectUrl);
+      pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+      const originalViewport = page.getViewport({ scale: 1.0 });
+      const viewport = page.getViewport({ scale: VIEWER_DISPLAY_SCALE });
+
+      // Offscreen canvas: the shared hidden canvas belongs to the import
+      // flow and also drives the global canvasDimensions.
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d', { alpha: false });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: context, viewport, background: 'white' }).promise;
+      // Thumbnails stay greyscale by design; only plan.url carries colour.
+      grayscaleCanvasInPlace(canvas);
+
+      return {
+        url: base64PDF,
+        thumbnail: canvas.toDataURL(),
+        width: originalViewport.width,
+        height: originalViewport.height
+      };
+    } finally {
+      try { await pdf?.destroy(); } catch { /* best-effort cleanup */ }
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+
+  const handleReplaceFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files ? event.target.files[0] : null;
+    const planId = replacingPlanId;
+    event.target.value = '';
+    if (!file || !planId || !selectedProjectId) return;
+    if (!pdfjs) {
+      addToast?.('PDF engine is still loading, try again in a moment', 'error');
+      setReplacingPlanId(null);
+      return;
+    }
+
+    const plan = plans.find(p => p.id === planId);
+    if (!plan) return;
+
+    setReplaceBusy(true);
+    try {
+      const incoming = await readReplacementPdf(file);
+      const storedWidth = plan.dimensions?.width || 0;
+      const storedHeight = plan.dimensions?.height || 0;
+      const comparison = comparePlanPageSize(
+        { width: incoming.width, height: incoming.height },
+        { width: storedWidth, height: storedHeight }
+      );
+
+      if (comparison.matches) {
+        // Same page size: pins are already in the right space.
+        await replacePlanPdf(selectedProjectId, planId, incoming);
+      } else {
+        setPendingReplacement({
+          planId,
+          planName: plan.name || '',
+          ...incoming,
+          storedWidth,
+          storedHeight,
+          comparison
+        });
+      }
+    } catch (error) {
+      console.error('Error replacing plan PDF:', error);
+      addToast?.('Could not read that PDF', 'error');
+    } finally {
+      setReplaceBusy(false);
+      setReplacingPlanId(null);
+    }
+  };
+
+  const confirmReplacement = async (rescale: boolean) => {
+    if (!pendingReplacement || !selectedProjectId) return;
+    const { planId, url, thumbnail, width, height, comparison } = pendingReplacement;
+    setReplaceBusy(true);
+    try {
+      await replacePlanPdf(selectedProjectId, planId, {
+        url,
+        thumbnail,
+        width,
+        height,
+        rescalePins: rescale
+          ? { ratioX: comparison.ratioX, ratioY: comparison.ratioY }
+          : undefined
+      });
+      setPendingReplacement(null);
+    } catch (error) {
+      console.error('Error replacing plan PDF:', error);
+    } finally {
+      setReplaceBusy(false);
+    }
   };
 
   // Navigate to the PDF view
@@ -547,6 +684,16 @@ const PdfPicker = () => {
 
       <canvas ref={pdfCanvasRef} className="hidden" />
 
+      {/* Shared file picker for "Replace PDF" in management mode */}
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="application/pdf"
+        onChange={handleReplaceFileChange}
+        className="hidden"
+        aria-label="Replace plan PDF"
+      />
+
       {/* Retired grayscale migration - inert, see MigrationRunner below */}
       {mounted && (
         <MigrationRunner projects={projects} />
@@ -644,6 +791,19 @@ const PdfPicker = () => {
                       Rename
                     </button>
                     <button
+                      onClick={() => beginReplacePlanPdf(plan.id)}
+                      disabled={replaceBusy}
+                      className={`px-2 py-1 text-sm rounded text-white ${
+                        replaceBusy
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-purple-600 hover:bg-purple-700'
+                      }`}
+                      aria-label="Replace Plan PDF"
+                      title="Swap the PDF behind this plan, keeping its pins"
+                    >
+                      {replaceBusy && replacingPlanId === plan.id ? '⏳' : 'Replace PDF'}
+                    </button>
+                    <button
                       onClick={() => setShowDeleteConfirm(plan.id)}
                       className="px-2 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
                       aria-label="Delete Plan"
@@ -724,6 +884,95 @@ const PdfPicker = () => {
                 className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
               >
                 Delete Forever
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Page-size mismatch on Replace PDF: pins only stay where they are if
+          the incoming page matches, so make the engineer choose. */}
+      {pendingReplacement && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4 text-amber-600">⚠️ Page size differs</h3>
+            <p className="text-gray-700 mb-3">
+              The PDF you picked is a different size from “{pendingReplacement.planName}”.
+            </p>
+            <div className="text-sm text-gray-700 bg-gray-50 border rounded p-3 mb-3">
+              <div className="flex justify-between">
+                <span>Current plan</span>
+                <span className="font-mono">
+                  {Math.round(pendingReplacement.storedWidth)} × {Math.round(pendingReplacement.storedHeight)} pt
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>New PDF</span>
+                <span className="font-mono">
+                  {Math.round(pendingReplacement.width)} × {Math.round(pendingReplacement.height)} pt
+                </span>
+              </div>
+              {pendingReplacement.comparison.canRescale && (
+                <div className="flex justify-between mt-1 pt-1 border-t">
+                  <span>Scale</span>
+                  <span className="font-mono">
+                    {pendingReplacement.comparison.ratioX.toFixed(3)}× wide,{' '}
+                    {pendingReplacement.comparison.ratioY.toFixed(3)}× tall
+                  </span>
+                </div>
+              )}
+            </div>
+            {pendingReplacement.comparison.canRescale && !pendingReplacement.comparison.uniform && (
+              <p className="text-sm text-red-600 mb-3">
+                The proportions changed too, so no rescale can line every pin
+                up exactly. Check the pins afterwards.
+              </p>
+            )}
+            {!pendingReplacement.comparison.canRescale && (
+              <p className="text-sm text-red-600 mb-3">
+                One of the page sizes could not be read, so rescaling is not
+                available. Pin positions will be kept as they are.
+              </p>
+            )}
+            <p className="text-sm text-gray-600 mb-4">
+              The plan keeps all of its pins either way — this only decides
+              where they end up.
+            </p>
+            <div className="flex flex-col gap-2">
+              {pendingReplacement.comparison.canRescale && (
+                <button
+                  onClick={() => confirmReplacement(true)}
+                  disabled={replaceBusy}
+                  className={`w-full px-4 py-2 rounded text-white text-left ${
+                    replaceBusy ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  <span className="font-medium">Rescale pins</span>
+                  <span className="block text-xs opacity-90">
+                    Keep each pin over the same spot on the drawing
+                  </span>
+                </button>
+              )}
+              <button
+                onClick={() => confirmReplacement(false)}
+                disabled={replaceBusy}
+                className={`w-full px-4 py-2 rounded text-left border ${
+                  replaceBusy
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                <span className="font-medium">Keep pin coordinates</span>
+                <span className="block text-xs text-gray-500">
+                  Leave pin positions untouched — they may no longer line up
+                </span>
+              </button>
+              <button
+                onClick={() => setPendingReplacement(null)}
+                disabled={replaceBusy}
+                className="w-full px-4 py-2 text-gray-600 hover:bg-gray-100 rounded disabled:text-gray-400"
+              >
+                Cancel
               </button>
             </div>
           </div>
