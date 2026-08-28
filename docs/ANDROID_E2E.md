@@ -38,9 +38,25 @@ commit.
 
 ## Emulator details
 
-API 34 `google_apis` x86_64, `pixel_c` tablet profile in landscape (the plan
-canvas is ~1263x893 CSS px; a phone viewport would put the pin targets off
-screen). The AVD is cached between runs; a cold run is ~10 min, warm ~6.
+API 34 `google_apis` x86_64 (WebView Chrome/113), `pixel_c` tablet profile. The
+script asks for landscape but the headless emulator has stayed portrait
+(900x1200 CSS px); pins are placed inside whatever part of the canvas is on
+screen, so either orientation works. The AVD is cached between runs; the
+first passing run took 7.5 min end to end (debug build 2 min, AVD 1.5 min,
+test 2 min).
+
+## What it has already caught
+
+Both were invisible on web and on a phone (React recovers; nothing is logged
+where anyone looks):
+
+- `pages/_app.tsx` rendered `<jeep-sqlite>` whenever the platform was `web` -
+  true at static-export time, false in the Android client - so every native
+  launch hydrated against mismatched HTML (React #418/#423). Now mount-gated.
+- After a WebView reload the native SQLite plugin still held the connection
+  while the JS map was empty, so `createConnection` threw "already exists"
+  and the store never initialised. `database.ts` now calls
+  `checkConnectionsConsistency()` first.
 
 ## Not covered (still on the manual checklists)
 
