@@ -120,8 +120,11 @@ async function main() {
 
   console.log('\n== first launch ==');
   let { browser, page, snap } = await connect();
-  const home = async () => {
+  // The store loads from native SQLite after mount; on the emulator's software
+  // GPU that can take a while, so wait for the plan list rather than a fixed delay.
+  const home = async ({ expectPlan = false } = {}) => {
     await page.waitForFunction(() => document.body.innerText.includes('Add Project'), { timeout: 60000 });
+    if (expectPlan) await page.waitForSelector('img[alt="Level 00"]', { timeout: 60000 }).catch(() => {});
     await page.waitForTimeout(3000);
   };
   await home();
@@ -175,7 +178,7 @@ async function main() {
   const pins = () => page.$$eval('span.rounded-full.bg-blue-500', els =>
     els.map(e => `${parseFloat(e.style.left).toFixed(2)},${parseFloat(e.style.top).toFixed(2)}`).sort());
   await page.goto('http://localhost/');
-  await home();
+  await home({ expectPlan: true });
   const before = await pins();
   check('pins placed', before.length === 3, `${before.length} pins: ${JSON.stringify(before)}`);
   await snap('home-with-pins');
@@ -185,7 +188,7 @@ async function main() {
   adb(['shell', 'am', 'force-stop', PKG]);
   await sleep(2000);
   ({ browser, page, snap } = await connect());
-  await home();
+  await home({ expectPlan: true });
   await snap('after-relaunch');
   const after = await pins();
   check('project survives relaunch',
