@@ -10,7 +10,8 @@
     "static": "next build && next export",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:e2e": "node tests/e2e/replace-pdf.js"
+    "test:e2e": "node tests/e2e/replace-pdf.js",
+    "test:e2e:android": "node tests/e2e/android.js"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",

@@ -1,0 +1,128 @@
+# Runs tests/e2e/android.js against a debug APK on a headless Android emulator.
+#
+# Why: the browser e2e only ever hits the `web` branches of the app. This job
+# boots the real APK (native SQLite plugin, @capacitor/filesystem, Preferences)
+# and drives it over Chrome DevTools on the WebView, so a migration or storage
+# bug that only shows on device fails here instead of on site.
+#
+# Runs on its own (workflow_dispatch / PRs touching app code) and is called by
+# build-apk.yml as a gate before a release is published. ubuntu-latest has
+# KVM, so the x86_64 system image runs at near-native speed; a cold run is
+# ~10 min, a cached one ~6.
+
+name: Android E2E
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    paths:
+      - "components/**"
+      - "pages/**"
+      - "services/**"
+      - "store/**"
+      - "utils/**"
+      - "hooks/**"
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "tests/e2e/**"
+      - ".github/workflows/android-e2e.yml"
+
+env:
+  API_LEVEL: 34
+  # A tablet profile: the plan canvas renders at ~1263x893 CSS px and the
+  # script double-clicks on the visible part of it. Landscape pixel_c gives
+  # 1280x900 CSS px so all three pin positions stay on screen.
+  AVD_PROFILE: pixel_c
+
+jobs:
+  android-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit-test the adb helper
+        run: node tests/e2e/adb.test.js
+
+      - name: Build web assets
+        run: npm run static
+
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Debug build: WebView remote debugging is on by default for debuggable
+      # APKs (Capacitor's CapConfig reads FLAG_DEBUGGABLE), which is what the
+      # script connects to. The release APK is built and signed separately.
+      - name: Build debug APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Cache AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}-${{ env.AVD_PROFILE }}-v1
+
+      - name: Create AVD snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ env.AVD_PROFILE }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD snapshot created"
+
+      - name: Run Android e2e
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ env.AVD_PROFILE }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb devices
+            adb shell settings put system user_rotation 1
+            node tests/e2e/android.js
+
+      - name: Upload screenshots and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-e2e
+          path: e2e-out/
+          if-no-files-found: ignore

@@ -9,6 +9,11 @@
 # Releasing: pass a release_tag (e.g. v18) to publish the signed APK to
 # Ianshaw93/fd-mobile-releases. Requires the RELEASE_REPO_TOKEN secret
 # (a PAT with repo scope on fd-mobile-releases). Refuses to release unsigned.
+#
+# Gate: a release run first executes the Android emulator e2e
+# (android-e2e.yml) against a debug build of the same commit; the release
+# build only proceeds if that passes. Artifact-only builds skip it, and
+# skip_e2e=true skips it on a release run (e.g. emulator infrastructure flake).
 
 name: Build APK
 
@@ -19,9 +24,22 @@ on:
         description: "Tag to release to fd-mobile-releases (e.g. v18). Leave empty for artifact-only build."
         required: false
         default: ""
+      skip_e2e:
+        description: "Skip the Android emulator e2e gate on a release run"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
+  e2e:
+    if: inputs.release_tag != '' && !inputs.skip_e2e
+    uses: ./.github/workflows/android-e2e.yml
+
   build:
+    needs: e2e
+    # Run when the gate passed or was skipped (artifact-only build); never
+    # after a failed or cancelled gate.
+    if: always() && needs.e2e.result != 'failure' && needs.e2e.result != 'cancelled'
     runs-on: ubuntu-latest
     env:
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
