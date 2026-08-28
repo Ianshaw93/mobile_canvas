@@ -130,7 +130,6 @@ jobs:
           disable-animations: true
           script: |
             adb devices
-            adb shell settings put system user_rotation 1
             node tests/e2e/android.js
 
       - name: Upload screenshots and logcat

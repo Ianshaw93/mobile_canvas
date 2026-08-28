@@ -102,7 +102,18 @@ class Database {
 
     const sqlite = CapacitorSQLite;
     const sqliteConnection = new SQLiteConnection(sqlite);
-    
+
+    // After a WebView reload the JS-side connection map is empty while the
+    // native plugin still holds the connection, so createConnection fails with
+    // "already exists". The consistency check closes stale native connections.
+    if (!this.isWeb) {
+      try {
+        await sqliteConnection.checkConnectionsConsistency();
+      } catch (e) {
+        console.warn('[DB] checkConnectionsConsistency failed:', e);
+      }
+    }
+
     // Check if connection exists
     const isConnection = await sqliteConnection.isConnection(this.DB_NAME, false);
     if (isConnection.result) {

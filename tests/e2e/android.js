@@ -97,7 +97,12 @@ async function connect() {
     console.log('  connected via CDP');
   }
   const { page } = conn;
-  page.on('console', m => { if (m.type() === 'error') errs.push(m.text().slice(0, 250)); });
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    const url = (m.location() && m.location().url) || '';
+    if (/favicon.ico/.test(url)) return; // Chromium asks for it; the app ships none
+    errs.push((m.text() + (url ? '  @ ' + url : '')).slice(0, 300));
+  });
   page.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   const snap = async (label) => {
     try { await page.screenshot({ path: path.join(OUT, `${String(++shot).padStart(2, '0')}-${label}.png`) }); }
@@ -117,6 +122,9 @@ async function main() {
   console.log(adb(['install', '-r', '-g', APK]).trim());
   adbQuiet(['shell', 'pm', 'clear', PKG]);
   adbQuiet(['logcat', '-c']);
+  // Landscape so the plan canvas fits; lock it so the emulator can't flip back.
+  adbQuiet(['shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0']);
+  adbQuiet(['shell', 'settings', 'put', 'system', 'user_rotation', '1']);
 
   console.log('\n== first launch ==');
   let { browser, page, snap } = await connect();
