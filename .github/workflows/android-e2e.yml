@@ -5,7 +5,7 @@
 # and drives it over Chrome DevTools on the WebView, so a migration or storage
 # bug that only shows on device fails here instead of on site.
 #
-# Runs on its own (workflow_dispatch / PRs touching app code) and is called by
+# Runs on pushes to cloud/main and PRs touching app code (or by hand) and is called by
 # build-apk.yml as a gate before a release is published. ubuntu-latest has
 # KVM, so the x86_64 system image runs at near-native speed; a cold run is
 # ~10 min, a cached one ~6.
@@ -15,6 +15,20 @@ name: Android E2E
 on:
   workflow_dispatch:
   workflow_call:
+  push:
+    branches: [cloud, main]
+    paths:
+      - "components/**"
+      - "pages/**"
+      - "services/**"
+      - "store/**"
+      - "utils/**"
+      - "hooks/**"
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "tests/e2e/**"
+      - ".github/workflows/android-e2e.yml"
   pull_request:
     paths:
       - "components/**"
