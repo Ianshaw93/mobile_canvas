@@ -27,7 +27,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { chromium } = require('playwright');
+const { chromium, _android } = require('playwright');
 const { writeFixtures } = require('./fixtures');
 const { adb, adbQuiet, launchAndForward, waitFor, sleep } = require('./adb');
 
@@ -46,23 +46,64 @@ const check = (name, cond, detail = '') => {
 const errs = [];
 let shot = 0;
 
-async function connect() {
-  await launchAndForward(PKG, ACTIVITY, PORT);
+let device = null; // Playwright AndroidDevice, reused across relaunches
+
+// Preferred: Playwright's Android support talks to the WebView's abstract
+// socket through adb itself and is the path Playwright tests against WebView.
+async function connectViaPlaywrightAndroid() {
+  if (!device) {
+    const devices = await _android.devices();
+    device = devices.find(d => !process.env.ANDROID_SERIAL || d.serial() === process.env.ANDROID_SERIAL);
+    if (!device) throw new Error(`no Android device found (have: ${devices.map(d => d.serial()).join(', ') || 'none'})`);
+    device.setDefaultTimeout(60000);
+  }
+  const webview = await device.webView({ pkg: PKG }, { timeout: 60000 });
+  const page = await webview.page();
+  return { page, close: async () => { try { await page.context().close(); } catch {} } };
+}
+
+// Fallback: forward the socket to TCP and use plain CDP. Errors are logged so
+// a failure in CI says why instead of just timing out.
+async function connectViaCdp() {
+  const { sock } = await launchAndForward(PKG, ACTIVITY, PORT);
+  console.log(`  forwarded tcp:${PORT} -> localabstract:${sock}`);
+  let lastErr = null;
   const browser = await waitFor('CDP connection', async () => {
     try { return await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`, { timeout: 5000 }); }
-    catch { return null; }
-  }, { timeout: 60000, interval: 2000 });
+    catch (e) { if (String(e) !== String(lastErr)) console.log(`  cdp: ${String(e).split('\n')[0]}`); lastErr = e; return null; }
+  }, { timeout: 45000, interval: 2000 }).catch(async (e) => {
+    for (const ep of ['/json/version', '/json/list']) {
+      try { console.log(`  ${ep}: ${(await (await fetch(`http://127.0.0.1:${PORT}${ep}`)).text()).slice(0, 600)}`); }
+      catch (fe) { console.log(`  ${ep}: ${fe.message}`); }
+    }
+    throw e;
+  });
   const page = await waitFor('app page in WebView', async () => {
     const pages = browser.contexts().flatMap(c => c.pages());
     return pages.find(p => /^https?:\/\/localhost/.test(p.url())) || null;
   }, { timeout: 30000 });
+  return { page, close: async () => { try { await browser.close(); } catch {} } };
+}
+
+async function connect() {
+  adb(['shell', 'am', 'start', '-W', '-n', `${PKG}/${ACTIVITY}`]);
+  let conn;
+  try {
+    conn = await connectViaPlaywrightAndroid();
+    console.log('  connected via playwright _android');
+  } catch (e) {
+    console.log(`  playwright _android failed: ${String(e).split('\n')[0]}`);
+    conn = await connectViaCdp();
+    console.log('  connected via CDP');
+  }
+  const { page } = conn;
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text().slice(0, 250)); });
   page.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   const snap = async (label) => {
     try { await page.screenshot({ path: path.join(OUT, `${String(++shot).padStart(2, '0')}-${label}.png`) }); }
     catch (e) { console.log(`  (screenshot ${label} failed: ${e.message})`); }
   };
-  return { browser, page, snap };
+  return { browser: conn, page, snap };
 }
 
 async function main() {
