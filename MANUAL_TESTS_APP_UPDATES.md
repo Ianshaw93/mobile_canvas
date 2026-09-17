@@ -138,3 +138,10 @@ after that so a release deleted from GitHub stops being offered.
   rather than shown as uninstallable rows.
 - v16 and v17 are the same binary (identical SHA-256), so v17 reports itself as
   versionCode 16. Harmless — neither is the latest.
+
+## Downgrade instructions
+- [ ] An older release opens the warning before any download starts.
+- [ ] Warning explains loss of all local data and settings, and asks users to verify pushed projects in the web app.
+- [ ] Steps say download the older APK first, wait for completion, uninstall, install from Downloads, then pull projects.
+- [ ] Open web app opens the reporting web app; cancel closes the warning without downloading.
+- [ ] v19 and earlier explain that returning to latest requires a manual web download because there is no updater.

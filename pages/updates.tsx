@@ -215,13 +215,39 @@ export default function UpdatesPage() {
                 {confirmingTag === release.tag && (
                   <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">
                     <div className="font-semibold">
-                      Going back to {release.tag} means uninstalling Site Right first.
+                      Going back to {release.tag} requires uninstalling Site Right.
                     </div>
-                    Android will not install an older version over a newer one. Uninstalling
-                    deletes everything stored on this phone — every project, pin and photo that
-                    hasn&apos;t been pushed to the server. Sync first, and only do this if
-                    someone has told you to. The APK downloads in your browser to Downloads, so
-                    it survives the uninstall — install it from there afterwards.
+                    <p className="mt-2">
+                      Android cannot install an older version over the one installed. Uninstalling
+                      deletes all local projects, plans, pins, photos and settings. Work that has
+                      not been successfully pushed to the server will be lost.
+                    </p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-5">
+                      <li>Push every project you want to keep to the server. Check in the web app
+                        that your plans, pins and photos are there before continuing.</li>
+                      <li>Tap <strong>Download in browser</strong> below and wait for the
+                        {release.tag} APK to finish downloading to your phone&apos;s Downloads folder.</li>
+                      <li>Uninstall Site Right from your phone.</li>
+                      <li>Open Files → Downloads and tap the downloaded APK to install
+                        {release.tag}. Allow installation from that browser or Files app if Android asks.</li>
+                      <li>Open Site Right and pull your saved projects from the server.</li>
+                    </ol>
+                    <p className="mt-2">
+                      You can also download older versions from the web app&apos;s
+                      {' '}<strong>Mobile App</strong> tab. Check the version label before downloading.
+                      Going back removes features added in newer versions.
+                    </p>
+                    {release.versionCode < 20 && (
+                      <p className="mt-2 font-semibold">
+                        {release.tag} has no in-app updater. To return to the latest version,
+                        download and install it from the web app; upgrading does not require uninstalling.
+                      </p>
+                    )}
+                    <button type="button"
+                      onClick={() => openInBrowser('https://site-right-report-gen.vercel.app')}
+                      className="mt-2 underline">
+                      Open web app
+                    </button>
                     <div className="mt-2 flex gap-2">
                       <button
                         onClick={() => setConfirmingTag(null)}
