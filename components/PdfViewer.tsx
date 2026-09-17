@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import useSiteStore from '@/store/useSiteStore';
 import { usePDF } from '@/hooks/usePDF';
+import { hasVisibleColor } from '@/utils/planColor';
+import type { PlanDisplayMode } from '@/services/PlanDisplayPreferences';
 
 type PdfViewerProps = {
   pdfId: string;
+  displayMode?: PlanDisplayMode;
+  onColorAvailabilityChange?: (available: boolean | null) => void;
 };
 
 // Utility function to convert Base64 to ArrayBuffer
@@ -18,7 +22,8 @@ const base64ToArrayBuffer = (base64: string) => {
   return bytes.buffer; // Return ArrayBuffer
 };
 
-const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
+const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId, displayMode = 'color', onColorAvailabilityChange }) => {
+  const renderGeneration = useRef(0);
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null); // State to store the Base64 image
   const pdfjs = usePDF(); // Load PDF.js
@@ -32,6 +37,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
   const renderPdf = async () => {
     if (!pdfjs || !pdfCanvasRef.current || !plan?.url) return;
 
+    const generation = renderGeneration.current;
     const pdfData = base64ToArrayBuffer(plan.url); // Convert base64 to ArrayBuffer
     try {
       // @ts-ignore
@@ -62,6 +68,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
       const renderTask = page.render(renderContext);
       await renderTask.promise;
+      if (generation === renderGeneration.current) {
+        try {
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+          onColorAvailabilityChange?.(hasVisibleColor(pixels.data));
+        } catch {
+          // If inspection is unavailable, leave status unknown rather than
+          // incorrectly claiming that this PDF has no color.
+          onColorAvailabilityChange?.(null);
+        }
+      }
       // Render in the PDF's own colours: on site, coloured detail in the
       // original drawing is often the whole point of zooming in. Greyscale
       // remains an export concern (DownloadProjectButton), not a viewer one.
@@ -78,10 +94,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
 
   // Trigger the rendering when dependencies are ready
   useEffect(() => {
+    renderGeneration.current += 1;
+    onColorAvailabilityChange?.(null);
     if (pdfjs && pdfCanvasRef.current && plan && !imageDataUrl) {
       renderPdf();
     }
-  }, [pdfjs, pdfCanvasRef.current, plan?.url]); // Only re-render if the PDF URL changes
+    return () => { renderGeneration.current += 1; };
+  }, [pdfjs, plan?.url]); // Only re-render if the PDF URL changes
 
   // PDF Container Sizing Fix: Use canvasDimensions (actual rendered size) instead of plan.dimensions (original PDF size)
   // This ensures container matches the rendered canvas exactly, preventing oversized containers
@@ -107,6 +126,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfId }) => {
           position: 'absolute',
           top: 0,
           left: 0,
+          // Filter only the drawing; pin overlay and source PDF stay untouched.
+          filter: displayMode === 'grayscale' ? 'grayscale(1)' : 'none',
           zIndex: 1
         }}
       />

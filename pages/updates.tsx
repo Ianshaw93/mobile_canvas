@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import { Capacitor } from '@capacitor/core';
 import {
   CurrentVersion,
   RELEASES_PAGE,
@@ -8,12 +9,13 @@ import {
   openInBrowser,
 } from '@/services/UpdateService';
 import { useReleaseInstaller } from '@/hooks/useReleaseInstaller';
+import InstallerStatus from '@/components/InstallerStatus';
 import {
   AppRelease,
   ReleaseStatus,
   classifyRelease,
   formatBytes,
-  isDowngrade,
+  resolveInstallRoute,
 } from '@/utils/appVersion';
 
 const STATUS_LABEL: Record<ReleaseStatus, string> = {
@@ -36,14 +38,24 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 }
 
+function formatCachedAt(cachedAt: number | null): string {
+  if (!cachedAt) return '';
+  const date = new Date(cachedAt);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
+
 /**
  * The Updates screen: every release the fleet can install, newest first.
  *
  * This is the answer to "I tapped Later and now I want it" — and to "can I go
- * back to the previous version". Downgrades are offered, but only behind an
- * explicit warning: Android cannot install a lower versionCode over a higher
- * one, so going back means uninstalling first, and uninstalling destroys the
- * local SQLite database along with every site visit that hasn't been pushed.
+ * back to the previous version". What each row offers comes from one shared
+ * decision (`resolveInstallRoute`): nothing on web (there is no installer to
+ * hand an APK to), the in-app installer for upgrades, and — behind an explicit
+ * warning — a *browser* download for downgrades. Android cannot install a
+ * lower versionCode over a higher one, so going back means uninstalling first;
+ * uninstalling destroys app-private storage (the local SQLite database and the
+ * update cache with it), which is exactly why the downgrade APK must land in
+ * public Downloads via the browser rather than in the app cache.
  */
 export default function UpdatesPage() {
   const router = useRouter();
@@ -51,33 +63,51 @@ export default function UpdatesPage() {
   const [current, setCurrent] = useState<CurrentVersion | null>(null);
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [confirmingTag, setConfirmingTag] = useState<string | null>(null);
+  // null until mounted: neither install buttons nor the web notice render in
+  // the static export or before the platform is known.
+  const [isNative, setIsNative] = useState<boolean | null>(null);
   const installer = useReleaseInstaller();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
-    const [version, result] = await Promise.all([getCurrentVersion(), getReleases()]);
+    const [version, result] = await Promise.all([getCurrentVersion(), getReleases(options)]);
     setCurrent(version);
     setReleases(result.releases);
     setFromCache(result.fromCache);
+    setCachedAt(result.cachedAt);
     setCheckError(result.error);
     setLoading(false);
   }, []);
 
   useEffect(() => {
+    setIsNative(Capacitor.isNativePlatform());
+    // Arriving from the launch prompt reuses the list it just fetched;
+    // the Refresh button below is the deliberate bypass.
     load();
   }, [load]);
 
   const currentCode = current?.code ?? null;
 
-  const handleInstall = (release: AppRelease) => {
-    if (isDowngrade(release.versionCode, currentCode) && confirmingTag !== release.tag) {
+  const handleAction = (release: AppRelease) => {
+    const route = resolveInstallRoute({ release, currentCode, isNative: isNative === true });
+    if (route === 'in-app') {
+      setConfirmingTag(null);
+      installer.start(release);
+    } else if (route === 'browser' && confirmingTag !== release.tag) {
+      // Downgrades need the warning first; confirmDowngrade does the download.
       setConfirmingTag(release.tag);
-      return;
     }
+  };
+
+  const confirmDowngrade = (release: AppRelease) => {
     setConfirmingTag(null);
-    installer.start(release);
+    // Browser download on purpose: it lands in public Downloads, so it is
+    // still there after the uninstall Android requires for a downgrade. No
+    // in-app install intent is fired — Android would refuse it anyway.
+    openInBrowser(release.apkUrl);
   };
 
   return (
@@ -88,7 +118,11 @@ export default function UpdatesPage() {
             ← Back
           </button>
           <h1 className="text-lg font-semibold text-gray-900">Updates</h1>
-          <button onClick={load} disabled={loading} className="text-blue-600 disabled:opacity-40">
+          <button
+            onClick={() => load({ force: true })}
+            disabled={loading}
+            className="text-blue-600 disabled:opacity-40"
+          >
             {loading ? '…' : 'Refresh'}
           </button>
         </div>
@@ -103,36 +137,31 @@ export default function UpdatesPage() {
           )}
         </div>
 
+        {isNative === false && (
+          <div className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            Installing is only possible from the app on an Android device. In a browser this list
+            is read-only — download APKs from the{' '}
+            <button
+              onClick={() => openInBrowser(RELEASES_PAGE)}
+              className="underline"
+            >
+              GitHub releases page
+            </button>
+            .
+          </div>
+        )}
+
         {checkError && (
           <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
             {fromCache
-              ? 'Showing the last known version list — could not reach GitHub just now.'
+              ? `Showing the version list fetched ${formatCachedAt(cachedAt)} — could not reach GitHub just now.`
               : `Could not check for updates: ${checkError}`}
           </div>
         )}
 
-        {installer.stage === 'permission' && (
-          <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            Android needs permission to install apps from Site Right. Turn on &quot;Allow from
-            this source&quot;, then tap Install again.
-            <button
-              onClick={installer.grantPermission}
-              className="mt-2 w-full rounded bg-amber-600 px-3 py-2 text-white"
-            >
-              Open permission settings
-            </button>
-          </div>
-        )}
-
-        {installer.stage === 'error' && (
-          <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-            {installer.error}
-            <button
-              onClick={() => openInBrowser(RELEASES_PAGE)}
-              className="mt-2 w-full rounded bg-red-600 px-3 py-2 text-white"
-            >
-              Open releases in browser
-            </button>
+        {!checkError && fromCache && cachedAt && (
+          <div className="mb-4 text-xs text-gray-500">
+            List as of {formatCachedAt(cachedAt)}. Tap Refresh to check again.
           </div>
         )}
 
@@ -149,9 +178,14 @@ export default function UpdatesPage() {
         <div className="space-y-3">
           {releases.map((release) => {
             const status = classifyRelease(release, currentCode);
-            const downgrade = isDowngrade(release.versionCode, currentCode);
+            const route = resolveInstallRoute({
+              release,
+              currentCode,
+              isNative: isNative === true,
+            });
             const active = installer.activeTag === release.tag;
-            const busy = active && (installer.stage === 'downloading' || installer.stage === 'installing');
+            const busy =
+              active && (installer.stage === 'downloading' || installer.stage === 'installing');
 
             return (
               <div key={release.tag} className="rounded-lg border bg-white p-3">
@@ -176,21 +210,7 @@ export default function UpdatesPage() {
                   </p>
                 )}
 
-                {busy && (
-                  <div className="mt-2">
-                    <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
-                      <div
-                        className="h-full bg-blue-600 transition-all"
-                        style={{ width: `${installer.progress?.percent ?? 0}%` }}
-                      />
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {installer.stage === 'installing'
-                        ? 'Opening the installer…'
-                        : `Downloading ${formatBytes(installer.progress?.bytes ?? 0)}`}
-                    </div>
-                  </div>
-                )}
+                <InstallerStatus installer={installer} release={release} />
 
                 {confirmingTag === release.tag && (
                   <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">
@@ -200,7 +220,8 @@ export default function UpdatesPage() {
                     Android will not install an older version over a newer one. Uninstalling
                     deletes everything stored on this phone — every project, pin and photo that
                     hasn&apos;t been pushed to the server. Sync first, and only do this if
-                    someone has told you to.
+                    someone has told you to. The APK downloads in your browser to Downloads, so
+                    it survives the uninstall — install it from there afterwards.
                     <div className="mt-2 flex gap-2">
                       <button
                         onClick={() => setConfirmingTag(null)}
@@ -209,24 +230,24 @@ export default function UpdatesPage() {
                         Cancel
                       </button>
                       <button
-                        onClick={() => handleInstall(release)}
+                        onClick={() => confirmDowngrade(release)}
                         className="flex-1 rounded bg-red-600 px-2 py-1 text-white"
                       >
-                        Download anyway
+                        Download in browser
                       </button>
                     </div>
                   </div>
                 )}
 
-                {status !== 'current' && confirmingTag !== release.tag && (
+                {route !== 'none' && confirmingTag !== release.tag && (
                   <button
-                    onClick={() => handleInstall(release)}
+                    onClick={() => handleAction(release)}
                     disabled={busy}
                     className={`mt-3 w-full rounded px-3 py-2 text-white disabled:opacity-50 ${
-                      downgrade ? 'bg-gray-600' : 'bg-blue-600'
+                      route === 'browser' ? 'bg-gray-600' : 'bg-blue-600'
                     }`}
                   >
-                    {busy ? 'Working…' : downgrade ? 'Go back to this version' : 'Install'}
+                    {busy ? 'Working…' : route === 'browser' ? 'Go back to this version' : 'Install'}
                   </button>
                 )}
               </div>

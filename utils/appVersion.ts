@@ -131,6 +131,37 @@ export function isDowngrade(releaseCode: number, currentCode: number | null): bo
   return releaseCode < currentCode;
 }
 
+/**
+ * What tapping a release row is allowed to do. One function decides, so the
+ * launch prompt and the Updates screen cannot diverge.
+ *
+ * - `in-app`: download to cache and hand to the Android package installer.
+ * - `browser`: open the APK URL in the browser instead. Used for downgrades:
+ *   Android refuses an in-app downgrade (INSTALL_FAILED_VERSION_DOWNGRADE),
+ *   and the only way back — uninstall first — wipes the app-private cache the
+ *   in-app download would sit in. A browser download lands in public
+ *   Downloads and survives the uninstall.
+ * - `none`: no action. The installed version, and everything on web, where
+ *   there is no installer to hand an APK to.
+ */
+export type InstallRoute = 'in-app' | 'browser' | 'none';
+
+export function resolveInstallRoute({
+  release,
+  currentCode,
+  isNative,
+}: {
+  release: AppRelease;
+  currentCode: number | null;
+  isNative: boolean;
+}): InstallRoute {
+  if (!isNative) return 'none';
+  const status = classifyRelease(release, currentCode);
+  if (status === 'current') return 'none';
+  if (isDowngrade(release.versionCode, currentCode)) return 'browser';
+  return 'in-app';
+}
+
 /** Download sizes for the update UI. ~15 MB APKs over a site connection. */
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) {

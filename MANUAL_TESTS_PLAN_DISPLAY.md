@@ -1,0 +1,11 @@
+## Plan display toggle
+- [ ] Import a color PDF and open the single-plan view: color by default.
+- [ ] Settings > Plan display > Grayscale: drawing becomes grayscale; pins retain colors.
+- [ ] Switch back to Color: original colors return without importing again.
+- [ ] Pan/zoom, place and open pins in both modes: positions and zoom stay unchanged.
+- [ ] Leave/reopen the view and restart the app: selected mode is remembered.
+- [ ] Replace a PDF with a color original: both display modes work and pins survive.
+- [ ] Existing permanently grayscale PDF: both modes work; Color does not invent color.
+- [ ] Push/pull a color plan: original PDF stays color even when viewer uses grayscale.
+- [ ] Export remains grayscale; plan thumbnails remain unchanged.
+- [ ] Repeat display/persistence checks on Android when SDK is available.
