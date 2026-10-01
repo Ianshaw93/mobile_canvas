@@ -4,9 +4,7 @@ const fs=require('fs'),path=require('path'),crypto=require('crypto');
 const {chromium}=require('playwright');
 const {adb,launchAndForward,sleep}=require('./adb');
 const {writeFixtures}=require('./fixtures');
-const API='https://web-production-44b8.up.railway.app';
-const TARGET='3b95bd12-9e13-4187-8c13-a0ca86d7455c';
-const NAME='TEST SYNC 181 IMAGES - 0706 - Millstone Court PAS9980';
+const {API,TARGET,NAME,classifyWrite}=require('./live-recovery-policy');
 const ORIGINAL='proj_1790588796495';
 const OUT=process.env.E2E_OUT||'prototypes/upload-recovery/data/local-live-recovery';
 const PKG='com.example.app',PORT=9334;
@@ -36,23 +34,10 @@ async function connect(){
     if(method==='GET'){await route.continue();return;}
     let body;try{body=req.postDataJSON();}catch{}
     const reject=async()=>{blocked++;console.log('Blocked unexpected request:',method,new URL(url).pathname);await route.abort();};
-    if(method!=='POST'||!body)return reject();
-    if(url.endsWith('/files/presign-upload')){
-      if(body.project_id!==TARGET)return reject();
-      requests.push({kind:'presign',body});
-      return route.continue();
-    }
-    if(url.endsWith('/files/confirm-upload')){
-      if(body.project_id!==TARGET||!body.file_key?.startsWith(`projects/${TARGET}/`)||(body.pin_id&&body.pin_id!==pinId))return reject();
-      requests.push({kind:'confirm',body});return route.continue();
-    }
-    if(!url.endsWith('/sync/push'))return reject();
-    if((body.projects||[]).some(p=>p.id!==TARGET||p.name!==NAME)||
-       (body.plans||[]).some(p=>p.id!==planId||p.project_id!==TARGET)||
-       (body.pins||[]).some(p=>p.id!==pinId||p.plan_id!==planId)||
-       (body.pin_comments||[]).some(c=>c.pin_id!==pinId)||
-       (body.attachments||[]).some(a=>!imageIds.includes(a.id)||a.pin_id!==pinId||!a.url.startsWith(`projects/${TARGET}/`)))return reject();
-    requests.push({kind:'push',body});
+    const kind=classifyWrite(method,url,body,{planId,pinId,imageIds});
+    if(!kind)return reject();
+    requests.push({kind,body});
+    if(kind!=='push')return route.continue();
     const image=body.attachments?.[0];
     if(image?.id===(bytesOnly?extraImageId:imageIds[0])&&!dropped){
       dropped=true;
@@ -68,7 +53,7 @@ async function connect(){
     return route.continue();
   });
   await page.reload({waitUntil:'domcontentloaded'});
-  await page.waitForFunction(()=>document.body.innerText.includes('Add Project'),{timeout:60000});
+  await page.waitForFunction(()=>document.body.innerText.includes('Add Project'),null,{timeout:60000});
 }
 async function push(){
   await page.getByRole('button',{name:'Push to Server',exact:true}).click();
