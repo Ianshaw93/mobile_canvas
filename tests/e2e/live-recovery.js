@@ -1,7 +1,7 @@
 // Opt-in production canary. Only the disposable TEST SYNC project can be written.
 // Seeds native SQLite fixtures, then drives the normal app Push button.
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
-const {chromium}=require('playwright');
+const {chromium,_android}=require('playwright');
 const {adb,launchAndForward,sleep}=require('./adb');
 const {writeFixtures}=require('./fixtures');
 const {API,TARGET,NAME,classifyWrite}=require('./live-recovery-policy');
@@ -20,14 +20,21 @@ if(bytesOnly)imageIds.push(extraImageId);
 const label=previous?.label||'AUTOMATED RECOVERY '+new Date().toISOString();
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC1sAAAAASUVORK5CYII=';
 const checks=[],requests=[];
-let conn,page,before,protectedBefore,dropped=false,lost=false,blocked=0;
+let conn,page,device,before,protectedBefore,dropped=false,lost=false,blocked=0;
 function check(name,condition){if(offline)name=name.replace('live test','fixture').replace('real database','isolated server').replace('real server','fixture server').replace('protected original','protected fixture');checks.push({name,pass:!!condition});console.log(`${condition?'PASS':'FAIL'} ${name}`);if(!condition)throw new Error(name);}
 async function read(id){if(fixture)return fixture.read(id);const r=await fetch(`${API}/api/mobile/sync/projects/${id}`);if(!r.ok)throw new Error(`Read failed ${r.status}`);return r.json();}
 function ownedPin(project){return project.plans.flatMap(p=>p.pins).find(p=>p.id===pinId);}
 async function connect(){
   await launchAndForward(PKG,'.MainActivity',PORT);
-  conn=await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
-  page=conn.contexts()[0].pages().find(p=>/localhost/.test(p.url()));
+  try {
+    if(!device){device=(await _android.devices()).find(d=>d.serial()===(process.env.ANDROID_SERIAL||'emulator-5554'));if(!device)throw new Error('No test emulator');device.setDefaultTimeout(60000);}
+    page=await (await device.webView({pkg:PKG},{timeout:60000})).page();
+    conn={close:async()=>{try{await page.context().close();}catch{}}};
+  } catch(error) {
+    console.log('Android WebView connection fallback:',String(error).split('\n')[0]);
+    conn=await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
+    page=conn.contexts()[0].pages().find(p=>/localhost/.test(p.url()));
+  }
   if(!page)throw new Error('No app WebView');
   page.on('request',req=>{if(req.method()==='PUT')requests.push({kind:'put',path:new URL(req.url()).pathname});});
   await page.route('https://api.github.com/**',r=>r.fulfill({status:200,contentType:'application/json',body:'[]'}));
@@ -181,4 +188,5 @@ main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{
   fs.writeFileSync(path.join(OUT,bytesOnly?'byte-results.json':'results.json'),JSON.stringify({mode:offline?'isolated-native-fixture':'live-canary',label,planId,pinId,imageIds,checks,requests,blocked},null,2));
   if(page&&process.exitCode)await page.screenshot({path:path.join(OUT,'failure.png')}).catch(()=>{});
   await conn?.close().catch(()=>{});
+  await device?.close().catch(()=>{});
 });
