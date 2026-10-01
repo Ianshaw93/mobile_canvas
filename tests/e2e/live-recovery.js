@@ -38,7 +38,28 @@ async function connect(){
   if(!page)throw new Error('No app WebView');
   page.on('request',req=>{if(req.method()==='PUT')requests.push({kind:'put',path:new URL(req.url()).pathname});});
   await page.route('https://api.github.com/**',r=>r.fulfill({status:200,contentType:'application/json',body:'[]'}));
-  if(fixture)await page.route(`${fixture.STORAGE}/**`,route=>route.fulfill(fixture.request(route.request().method(),route.request().url(),route.request().postDataBuffer())));
+  if(fixture){
+    // Older Android WebViews omit binary postData from the DevTools protocol.
+    // Capture the actual app body before fetch, rather than invent fixture bytes.
+    await page.addInitScript(()=>{
+      const originalFetch=window.fetch.bind(window);
+      window.__recoveryPutBodies={};
+      window.fetch=async(input,options)=>{
+        if(options?.method?.toUpperCase()==='PUT'){
+          const body=options.body;
+          const bytes=body instanceof Blob?new Uint8Array(await body.arrayBuffer()):body instanceof ArrayBuffer?new Uint8Array(body):ArrayBuffer.isView(body)?new Uint8Array(body.buffer,body.byteOffset,body.byteLength):null;
+          if(!bytes)throw new Error('Unsupported recovery test upload body');
+          window.__recoveryPutBodies[String(input)]=Array.from(bytes);
+        }
+        return originalFetch(input,options);
+      };
+    });
+    await page.route(`${fixture.STORAGE}/**`,async route=>{
+      const req=route.request();let bytes=req.postDataBuffer();
+      if(req.method()==='PUT'&&!bytes){const captured=await page.evaluate(url=>window.__recoveryPutBodies[url],req.url());if(!captured)throw new Error('Upload body not captured');bytes=Buffer.from(captured);}
+      await route.fulfill(fixture.request(req.method(),req.url(),bytes));
+    });
+  }
   await page.route(`${API}/**`,async route=>{
     const req=route.request(),url=req.url(),method=req.method();
     if(fixture&&method==='OPTIONS')return route.fulfill(fixture.request(method,url));
