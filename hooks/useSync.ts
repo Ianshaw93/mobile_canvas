@@ -99,7 +99,7 @@ export function useSync() {
   /**
    * Push a project to the server
    */
-  const pushProject = useCallback(async (projectId: string): Promise<SyncPushResponse | null> => {
+  const pushProject = useCallback(async (projectId: string, simulateMissingPhotoLinks=false): Promise<SyncPushResponse | null> => {
     console.log('[useSync] pushProject called with projectId:', projectId);
     setState(s => ({ 
       ...s, 
@@ -122,7 +122,7 @@ export function useSync() {
         }));
       };
       
-      const result = await syncService.pushProject(projectId, onProgress);
+      const result = await syncService.pushProject(projectId, onProgress, simulateMissingPhotoLinks);
       console.log('[useSync] Push successful:', result);
       
       const lastSync = await syncService.getLastSyncTime();

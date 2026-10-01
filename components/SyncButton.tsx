@@ -7,11 +7,12 @@
  * - Viewing sync status
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import useSync, { ServerProjectSummary } from '@/hooks/useSync';
 import { PullOptions } from '@/services/SyncService';
 import PhotoRecoveryPrototype from './PhotoRecoveryPrototype';
-import DevicePhotoRecovery from './DevicePhotoRecovery';
+import DevicePhotoRecovery,{PhotoRecoveryControl} from './DevicePhotoRecovery';
+import {PHOTO_RECOVERY_TEST_PROJECT} from '@/services/PhotoRecoveryService';
 
 // Pull options for the UI
 type IncludeOption = 'all' | 'plans' | 'plans,pins';
@@ -42,6 +43,8 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
     getDeviceId,
   } = useSync();
 
+  const recovery=useRef<PhotoRecoveryControl>(null);
+  const [recoveryBusy,setRecoveryBusy]=useState(false);
   const [showModal, setShowModal] = useState(false);
   const [serverProjects, setServerProjects] = useState<ServerProjectSummary[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -62,6 +65,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
       console.log('[SyncButton] No projectId, returning');
       return;
     }
+    if(projectId===PHOTO_RECOVERY_TEST_PROJECT&&recovery.current){await recovery.current.push();onSyncComplete?.();return;}
     console.log('[SyncButton] Calling pushProject...');
     await pushProject(projectId);
     console.log('[SyncButton] pushProject completed');
@@ -211,20 +215,20 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
 
         {/* Sync Buttons */}
           {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1' && <PhotoRecoveryPrototype projectId={projectId} />}
-          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery projectId={projectId} />}
-        <div className="flex gap-2">
+          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery ref={recovery} projectId={projectId} pushProject={simulate=>pushProject(projectId!,simulate)} onBusy={setRecoveryBusy} syncProgress={isPushing?{message:progressMessage,percent:progressPercent}:undefined} />}
+        <div className="flex flex-wrap gap-2">
           {/* Push Button */}
           {projectId && (
             <button
               onClick={handlePush}
-              disabled={isSyncing || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
+              disabled={isSyncing || recoveryBusy || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                 isSyncing
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
             >
-              {isPushing ? (
+              {isPushing || recoveryBusy ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Pushing...
@@ -243,7 +247,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
           {/* Pull Button */}
           <button
             onClick={handleOpenPullModal}
-            disabled={isSyncing || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
+            disabled={isSyncing || recoveryBusy || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
               isSyncing
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'

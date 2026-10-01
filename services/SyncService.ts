@@ -17,6 +17,7 @@ import { fileStorageService } from './fileStorage';
 import { database, DBProject, DBPlan, DBPoint, DBImage } from './database';
 import { v4 as uuidv4 } from 'uuid';
 import { FileUploadService, UploadResult } from './FileUploadService';
+import {RECOVERY_TRIAL_PROJECT,RECOVERY_TRIAL_NAME,RECOVERY_TRIAL_GAPS} from './PhotoRecoveryTrial';
 
 // =============================================================================
 // Configuration
@@ -363,7 +364,8 @@ class SyncService {
    */
   async pushProject(
     projectId: string,
-    onProgress?: (message: string, percent: number) => void
+    onProgress?: (message: string, percent: number) => void,
+    simulateMissingPhotoLinks=false
   ): Promise<SyncPushResponse> {
     const device = await this.initializeDevice();
 
@@ -382,6 +384,7 @@ class SyncService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    if(simulateMissingPhotoLinks&&(projectId!==RECOVERY_TRIAL_PROJECT||dbProject.name!==RECOVERY_TRIAL_NAME))throw new Error('Partial upload simulation is restricted to TEST SYNC.');
     const dbPlans = await database.getPlansByProject(projectId);
     
     // ==========================================================================
@@ -550,6 +553,8 @@ class SyncService {
               processedImages++;
               
               if (result.success && result.serverUrl) {
+                // Reproduce stored bytes without a database link on the first trial push.
+                if(simulateMissingPhotoLinks&&RECOVERY_TRIAL_GAPS.includes(image.id))continue;
                 allAttachments.push({
                   id: image.id,
                   pin_id: point.id,

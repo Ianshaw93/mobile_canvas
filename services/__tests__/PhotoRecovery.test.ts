@@ -66,7 +66,7 @@ describe('device photo recovery',()=>{
   });
   it('counts missing photos on a pin that already has a confirmed photo',async()=>{
     linked=true;
-    jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'plan',project_id:projectId,name:'GF',url:'pdf',created_at:'now',updated_at:'now'}]);
+    jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'plan',project_id:projectId,name:'GF',url:'pdf',thumbnail:'',width:1,height:1,display_scale:1.5,display_order:0,created_at:'now',updated_at:'now'}]);
     jest.mocked(database.getPointsByPlan).mockResolvedValue([{id:'pin',plan_id:'plan',x:1,y:1,status:'Open',created_at:'now',updated_at:'now'}]);
     jest.mocked(database.getImagesByPoint).mockResolvedValue([image,{...image,id:'missing-photo'}]);
     const scan=await scanPhotoRecovery(projectId);
