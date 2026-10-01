@@ -19,6 +19,10 @@ on:
         description: "Test v20 to candidate upgrade with native fixture data retained"
         type: boolean
         default: false
+      reuse_upgrade_apks_run:
+        description: "Reuse upgrade APK artifacts from a prior test run (test harness reruns only)"
+        type: string
+        default: ""
   workflow_call:
   push:
     branches: [cloud, main]
@@ -81,10 +85,21 @@ jobs:
       - name: Unit-test the adb helper
         run: node tests/e2e/adb.test.js
 
+      - name: Restore upgrade APK test artifacts
+        if: inputs.reuse_upgrade_apks_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: android-upgrade-apks
+          path: ${{ runner.temp }}/upgrade
+          run-id: ${{ inputs.reuse_upgrade_apks_run }}
+          github-token: ${{ github.token }}
+
       - name: Build web assets
+        if: inputs.reuse_upgrade_apks_run == ''
         run: npm run static
 
       - name: Capacitor sync
+        if: inputs.reuse_upgrade_apks_run == ''
         run: npx cap sync android
 
       - uses: actions/setup-java@v4
@@ -98,13 +113,14 @@ jobs:
       # APKs (Capacitor's CapConfig reads FLAG_DEBUGGABLE), which is what the
       # script connects to. The release APK is built and signed separately.
       - name: Build debug APK
+        if: inputs.reuse_upgrade_apks_run == ''
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew assembleDebug
 
       - name: Build v20 upgrade baseline
-        if: inputs.test_upgrade == true
+        if: inputs.test_upgrade == true && inputs.reuse_upgrade_apks_run == ''
         run: |
           mkdir -p "$RUNNER_TEMP/upgrade"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/upgrade/new.apk"

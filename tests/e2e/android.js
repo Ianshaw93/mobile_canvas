@@ -88,19 +88,23 @@ async function connectViaCdp() {
 async function connect() {
   adb(['shell', 'am', 'start', '-W', '-n', `${PKG}/${ACTIVITY}`]);
   let conn;
+  const preparePage=async page=>{
+    // The update checker is covered separately; keep the persistence test offline.
+    await page.route('https://api.github.com/repos/Ianshaw93/fd-mobile-releases/releases?per_page=30',route=>route.fulfill({status:200,contentType:'application/json',body:'[]'}));
+    await page.reload({waitUntil:'domcontentloaded'});
+  };
   try {
     conn = await connectViaPlaywrightAndroid();
+    await preparePage(conn.page);
     console.log('  connected via playwright _android');
   } catch (e) {
     console.log(`  playwright _android failed: ${String(e).split('\n')[0]}`);
+    await conn?.close().catch(()=>{});
     conn = await connectViaCdp();
+    await preparePage(conn.page);
     console.log('  connected via CDP');
   }
   const { page } = conn;
-  // Storage/upgrade checks must not depend on GitHub's public API availability.
-  // UpdateService has a separate unit suite; no release is offered in this fixture.
-  await page.route('https://api.github.com/repos/Ianshaw93/fd-mobile-releases/releases?per_page=30',route=>route.fulfill({status:200,contentType:'application/json',body:'[]'}));
-  await page.reload({waitUntil:'domcontentloaded'});
   page.on('console', m => {
     if (m.type() !== 'error') return;
     const url = (m.location() && m.location().url) || '';
@@ -242,7 +246,10 @@ async function main() {
     });
     const oldData=await snapshot();
     await browser.close().catch(()=>{});
+    // Playwright caches WebViews by package; discard the old process after an APK update.
+    if(device){await device.close();device=null;}
     console.log(adb(['install','-r',process.env.E2E_UPGRADE_APK]).trim());
+    adb(['shell','am','force-stop',PKG]);
     ({browser,page,snap}=await connect());
     await home({expectPlan:true});
     const newData=await snapshot();
