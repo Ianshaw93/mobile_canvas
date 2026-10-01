@@ -3,13 +3,12 @@ import {database,DBImage} from './database';
 import {fileStorageService} from './fileStorage';
 import {FileUploadService} from './FileUploadService';
 import {syncService} from './SyncService';
+import {readRecoveryServerState} from './RecoveryServerState';
 
-// First device build: repair is restricted to the agreed disposable live test project.
-export const PHOTO_RECOVERY_TEST_PROJECT='3b95bd12-9e13-4187-8c13-a0ca86d7455c';
 const API='https://web-production-44b8.up.railway.app';
 type RemoteImage={id:string;url:string};
 type RemotePin={id:string;deleted_at?:string;attachments:RemoteImage[]};
-type RemoteProject={id:string;name:string;plans:Array<{name:string;pins:RemotePin[]}>};
+type RemoteProject={id:string;name:string;deletedImages:Set<string>;plans:Array<{name:string;pins:RemotePin[]}>};
 type Checkpoint={key:string;uploadUrl:string;hash:string;uploaded?:boolean;expiresAt?:number};
 export type RecoveryPhoto={image:DBImage;plan:string;pin:number;state:'confirmed'|'pending'|'blocked';error?:string};
 export type RecoveryScan={photos:RecoveryPhoto[];emptyPins:Array<{plan:string;pin:number}>;confirmed:number;pending:number};
@@ -21,10 +20,11 @@ async function jsonRequest(path:string,body?:unknown) {
   return response.json();
 }
 async function readTarget(projectId:string):Promise<RemoteProject> {
-  if(projectId!==PHOTO_RECOVERY_TEST_PROJECT)throw new Error('This device test only supports TEST SYNC.');
-  const remote:RemoteProject=await jsonRequest('/api/mobile/sync/projects/'+projectId);
-  if(remote.id!==projectId||remote.name!=='TEST SYNC 181 IMAGES - 0706 - Millstone Court PAS9980')throw new Error('Test project identity changed. Photo recovery is blocked.');
-  return remote;
+  const state=await readRecoveryServerState(projectId);
+  const project=state.projects.find(p=>p.id===projectId);
+  if(!project)throw new Error('Project is not on the server yet. Finish syncing it first; your local work is retained.');
+  if(project.deleted_at)throw new Error('Project was deleted on the server. Recovery is stopped; your local work is retained.');
+  return {id:project.id,name:project.name,deletedImages:new Set(state.attachments.filter(a=>a.deleted_at).map(a=>a.id)),plans:state.plans.filter(p=>!p.deleted_at).map(plan=>({name:plan.name,pins:state.pins.filter(p=>p.plan_id===plan.id).map(pin=>({id:pin.id,deleted_at:pin.deleted_at,attachments:state.attachments.filter(a=>a.pin_id===pin.id&&!a.deleted_at).map(a=>({id:a.id,url:a.url}))}))}))};
 }
 async function hash(bytes:Uint8Array) {
   const digest=await crypto.subtle.digest('SHA-256',bytes);
@@ -52,9 +52,9 @@ export async function scanPhotoRecovery(projectId:string):Promise<RecoveryScan> 
       const point=points[n],serverPin=serverPins.get(point.id),images=await database.getImagesByPoint(point.id);
       if(!images.length&&!serverPin?.attachments.length)emptyPins.push({plan:plan.name,pin:n+1});
       for(const image of images) {
-        const confirmed=serverPin?.attachments.some(a=>a.id===image.id);
-        const blocked=!serverPin||!!serverPin.deleted_at;
-        photos.push({image,plan:plan.name,pin:n+1,state:confirmed?'confirmed':blocked?'blocked':'pending',error:blocked?'Pin is absent or deleted on the server. Sync or review the pin first.':undefined});
+        const blocked=!serverPin||!!serverPin.deleted_at||remote.deletedImages.has(image.id);
+        const confirmed=!blocked&&serverPin?.attachments.some(a=>a.id===image.id);
+        photos.push({image,plan:plan.name,pin:n+1,state:confirmed?'confirmed':blocked?'blocked':'pending',error:blocked?(remote.deletedImages.has(image.id)?'Photo was removed on the server. Add a new photo to this pin if needed.':'Pin or plan is absent or deleted on the server. Sync or review it first.'):undefined});
       }
     }
   }
@@ -64,7 +64,7 @@ export async function scanPhotoRecovery(projectId:string):Promise<RecoveryScan> 
 let recovering=false;
 export async function recoverPhotos(projectId:string,photos:RecoveryPhoto[],onProgress:(p:PhotoProgress)=>void) {
   if(recovering)throw new Error('Photo recovery is already running.');
-  if(projectId!==PHOTO_RECOVERY_TEST_PROJECT)throw new Error('Only the live TEST SYNC project can be repaired in this build.');
+  if(!projectId)throw new Error('Select a project before syncing photos.');
   recovering=true;
   const failures:Array<{id:string;error:string}>=[];
   try {
@@ -77,6 +77,7 @@ export async function recoverPhotos(projectId:string,photos:RecoveryPhoto[],onPr
         let remote=await readTarget(projectId);
         const serverPin=remote.plans.flatMap(p=>p.pins).find(p=>p.id===image.point_id);
         if(!serverPin||serverPin.deleted_at)throw new Error('Pin is no longer available on the server.');
+        if(remote.deletedImages.has(image.id))throw new Error('Photo was removed on the server. It will not be restored by a retry.');
         const existing=serverPin.attachments.find(a=>a.id===image.id);
         if(existing)continue; // Lost link acknowledgement: do not upsert existing survey records.
         const bytes=await localBytes(image),digest=await hash(bytes);
@@ -116,6 +117,7 @@ export async function recoverPhotos(projectId:string,photos:RecoveryPhoto[],onPr
         // Re-check deletion and identity immediately before adding the attachment.
         remote=await readTarget(projectId);
         const current=remote.plans.flatMap(p=>p.pins).find(p=>p.id===image.point_id);
+        if(remote.deletedImages.has(image.id))throw new Error('Photo was removed while uploading. No photo link was added.');
         if(!current||current.deleted_at)throw new Error('Pin was deleted while uploading. No photo link was added.');
         if(!current.attachments.some(a=>a.id===image.id)) {
           report('Saving photo link to its pin…');

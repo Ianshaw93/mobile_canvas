@@ -20,7 +20,7 @@ describe('mixed metadata and photo recovery through the complete service stack',
     jest.clearAllMocks();
     Object.defineProperty(globalThis,'crypto',{value:webcrypto,configurable:true});
     puts=0;links=[];metadataFails=false;omitLink=true;loseReply=true;
-    preferences=new Map([['photo_recovery_trial_full_push:'+target,'complete']]);objects=new Map();
+    preferences=new Map();objects=new Map();
     jest.mocked(Preferences.get).mockImplementation(async({key})=>({value:preferences.get(key)??null}));
     jest.mocked(Preferences.set).mockImplementation(async({key,value})=>{preferences.set(key,value);});
     jest.spyOn(syncService,'initializeDevice').mockResolvedValue({device_id:'fixture-device',device_name:'Offline integration test'});
@@ -39,7 +39,7 @@ describe('mixed metadata and photo recovery through the complete service stack',
       : originals.map((bytes,n)=>({id:'new-'+n,point_id:id,url:'data:image/jpeg;base64,'+Buffer.from(bytes).toString('base64'),created_at:timestamp,updated_at:timestamp})));
     global.fetch=jest.fn(async(input,options)=>{
       const url=new URL(String(input));
-      if(url.pathname.endsWith('/sync/projects/'+target))return Response.json(remote);
+      if(url.pathname.endsWith('/sync/pull'))return Response.json({projects:[{id:remote.id,name:remote.name}],plans:remote.plans.map(p=>({...p,project_id:target})),pins:remote.plans.flatMap(p=>p.pins.map(pin=>({...pin,plan_id:p.id}))),pin_comments:remote.plans.flatMap(p=>p.pins.flatMap(pin=>pin.comments.map(c=>({...c,pin_id:pin.id})))),attachments:remote.plans.flatMap(p=>p.pins.flatMap(pin=>pin.attachments.map(a=>({...a,pin_id:pin.id}))))});
       if(url.pathname.endsWith('/files/presign-upload')){
         const body=JSON.parse(String(options?.body));
         expect(body.project_id).toBe(target);expect(body.pin_id).toBe('new-pin');
@@ -81,7 +81,7 @@ describe('mixed metadata and photo recovery through the complete service stack',
     });
   });
   afterEach(()=>jest.restoreAllMocks());
-  const push=()=>pushWithPhotoRecovery(target,(simulate,metadataOnly)=>syncService.pushProject(target,undefined,simulate,metadataOnly),jest.fn());
+  const push=()=>pushWithPhotoRecovery(target,metadataOnly=>syncService.pushProject(target,undefined,metadataOnly),jest.fn());
   it('saves new work, recovers one missing link, and sends no repeat PUTs or duplicate comments',async()=>{
     const partial=await push();
     expect(partial.confirmed).toBe(3);expect(partial.pending).toBe(1);expect(puts).toBe(3);

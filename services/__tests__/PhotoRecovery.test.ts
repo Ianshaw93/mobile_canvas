@@ -7,7 +7,10 @@ const mockUpload=jest.fn(),mockSign=jest.fn();
 jest.mock('../FileUploadService',()=>({FileUploadService:jest.fn().mockImplementation(()=>({getPresignedUploadUrl:mockSign,uploadFileToPresignedUrl:mockUpload}))}));
 import {Preferences} from '@capacitor/preferences';
 import {database} from '../database';
-import {PHOTO_RECOVERY_TEST_PROJECT,recoverPhotos,scanPhotoRecovery,RecoveryPhoto} from '../PhotoRecoveryService';
+import {recoverPhotos,scanPhotoRecovery,RecoveryPhoto} from '../PhotoRecoveryService';
+import {RECOVERY_TRIAL_PROJECT as PHOTO_RECOVERY_TEST_PROJECT} from '../PhotoRecoveryTrial';
+import {readRecoveryServerState} from '../RecoveryServerState';
+jest.mock('../RecoveryServerState',()=>({readRecoveryServerState:jest.fn()}));
 
 describe('device photo recovery',()=>{
   const projectId=PHOTO_RECOVERY_TEST_PROJECT;
@@ -21,6 +24,7 @@ describe('device photo recovery',()=>{
     jest.mocked(Preferences.set).mockImplementation(async options=>{saved=options.value;});
     mockSign.mockResolvedValue({file_key:`projects/${projectId}/photo.jpg`,upload_url:'https://test.invalid/put',expires_in_seconds:900});
     mockUpload.mockImplementation(async()=>{stored=true;});
+    jest.mocked(readRecoveryServerState).mockImplementation(async()=>({server_timestamp:'now',projects:[{id:wrongIdentity?'wrong':projectId,name:'Project',site_visit_number:1}],plans:[{id:'plan',project_id:projectId,name:'GF',display_order:0,site_visit_number:1}],pins:pinAvailable?[{id:'pin',plan_id:'plan',x:1,y:1,status:'Open',site_visit_number:1,deleted_at:pinDeleted?'now':undefined}]:[],pin_comments:[],attachments:linked?[{id:'photo',pin_id:'pin',url:`projects/${projectId}/photo.jpg`,type:'image',site_visit_number:1}]:[]}));
     global.fetch=jest.fn(async(url,options)=>{
       if(!online)throw new Error('Network disconnected');
       if(String(url).includes('/sync/projects/'))return new Response(JSON.stringify({id:wrongIdentity?'wrong':projectId,name:'TEST SYNC 181 IMAGES - 0706 - Millstone Court PAS9980',plans:[{name:'GF',pins:pinAvailable?[{id:'pin',deleted_at:pinDeleted?'now':undefined,attachments:linked?[{id:'photo',url:`projects/${projectId}/photo.jpg`}]:[]}]:[]}]}));
@@ -56,8 +60,8 @@ describe('device photo recovery',()=>{
     expect(await recoverPhotos(projectId,[photo],jest.fn())).toEqual([]);
     expect(pushes).toBe(1);expect(mockUpload).toHaveBeenCalledTimes(1);
   });
-  it('blocks recovery outside the approved project',async()=>{
-    await expect(recoverPhotos('original-project',[photo],jest.fn())).rejects.toThrow('Only the live TEST SYNC');
+  it('blocks recovery without a selected project',async()=>{
+    await expect(recoverPhotos('',[photo],jest.fn())).rejects.toThrow('Select a project');
     expect(mockUpload).not.toHaveBeenCalled();expect(pushes).toBe(0);
   });
   it('blocks writes if the server project identity changed',async()=>{
@@ -103,14 +107,29 @@ describe('device photo recovery',()=>{
     const scan=await scanPhotoRecovery(projectId);
     expect(scan.confirmed).toBe(1);expect(scan.pending).toBe(1);expect(scan.emptyPins).toEqual([]);
   });
+  it('does not restore a photo deliberately deleted on the server',async()=>{
+    const source=jest.mocked(readRecoveryServerState).getMockImplementation()!;
+    jest.mocked(readRecoveryServerState).mockImplementation(async id=>{const state=await source(id);state.attachments.push({id:image.id,pin_id:'pin',url:'old.jpg',type:'image',site_visit_number:1,deleted_at:'now'});return state;});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toEqual([{id:image.id,error:expect.stringContaining('removed on the server')}]);
+    expect(mockUpload).not.toHaveBeenCalled();expect(pushes).toBe(0);
+  });
+  it('does not add a link if that photo is deleted while its bytes upload',async()=>{
+    let removed=false;
+    const source=jest.mocked(readRecoveryServerState).getMockImplementation()!;
+    jest.mocked(readRecoveryServerState).mockImplementation(async id=>{const state=await source(id);if(removed)state.attachments.push({id:image.id,pin_id:'pin',url:'old.jpg',type:'image',site_visit_number:1,deleted_at:'now'});return state;});
+    mockUpload.mockImplementationOnce(async()=>{stored=true;removed=true;});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toEqual([{id:image.id,error:expect.stringContaining('removed while uploading')}]);expect(pushes).toBe(0);
+  });
   it('resumes using persisted Preferences after the recovery module is restarted',async()=>{
     mockUpload.mockImplementationOnce(async()=>{stored=true;throw new Error('Connection lost after storing bytes');});
     expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);
     const persisted=saved;
+    const stateProvider=jest.mocked(readRecoveryServerState).getMockImplementation()!;
     jest.resetModules();
     const freshPreferences=(await import('@capacitor/preferences')).Preferences;
     jest.mocked(freshPreferences.get).mockResolvedValue({value:persisted});
     jest.mocked(freshPreferences.set).mockResolvedValue(undefined);
+    jest.mocked((await import('../RecoveryServerState')).readRecoveryServerState).mockImplementation(stateProvider);
     const restarted=await import('../PhotoRecoveryService');
     expect(await restarted.recoverPhotos(projectId,[photo],jest.fn())).toEqual([]);
     expect(mockUpload).toHaveBeenCalledTimes(1);expect(pushes).toBe(1);

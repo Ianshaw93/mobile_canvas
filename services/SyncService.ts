@@ -17,7 +17,8 @@ import { fileStorageService } from './fileStorage';
 import { database, DBProject, DBPlan, DBPoint, DBImage } from './database';
 import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { FileUploadService, UploadResult } from './FileUploadService';
-import {RECOVERY_TRIAL_PROJECT,RECOVERY_TRIAL_NAME,RECOVERY_TRIAL_GAPS} from './PhotoRecoveryTrial';
+import {readRecoveryServerState} from './RecoveryServerState';
+import {planFileDecision,rememberPlanFile} from './PlanFileSync';
 
 // =============================================================================
 // Configuration
@@ -365,7 +366,6 @@ class SyncService {
   async pushProject(
     projectId: string,
     onProgress?: (message: string, percent: number) => void,
-    simulateMissingPhotoLinks=false,
     recoveryMetadataOnly=false
   ): Promise<SyncPushResponse> {
     const device = await this.initializeDevice();
@@ -385,20 +385,21 @@ class SyncService {
       throw new Error(`Project ${projectId} not found`);
     }
 
-    if(simulateMissingPhotoLinks&&(projectId!==RECOVERY_TRIAL_PROJECT||dbProject.name!==RECOVERY_TRIAL_NAME))throw new Error('Partial upload simulation is restricted to TEST SYNC.');
-    const dbPlans = await database.getPlansByProject(projectId);
+    let dbPlans = await database.getPlansByProject(projectId);
     let remotePlans: ServerFullProject['plans'] = [];
+    const deletedPins=new Set<string>();
+    const deletedComments: ServerPinComment[]=[];
     if (recoveryMetadataOnly) {
-      if(projectId!==RECOVERY_TRIAL_PROJECT||dbProject.name!==RECOVERY_TRIAL_NAME)throw new Error('Recovery metadata sync is restricted to TEST SYNC.');
-      onProgress?.('Checking existing plans before saving pins and comments...', 3);
-      const response=await fetch(`${API_BASE_URL}/api/mobile/sync/projects/${projectId}`);
-      if(!response.ok)throw new Error('Could not check existing plans. Your local work is retained.');
-      const remote:ServerFullProject=await response.json();
-      if(remote.id!==projectId||remote.name!==RECOVERY_TRIAL_NAME)throw new Error('Server project identity does not match TEST SYNC.');
-      remotePlans=remote.plans;
+      onProgress?.('Checking server records before saving pins and comments...', 3);
+      const state=await readRecoveryServerState(projectId);
+      if(state.projects.some(p=>p.deleted_at))throw new Error('Project was deleted on the server. Your local work is retained.');
+      const deletedPlans=new Set(state.plans.filter(p=>p.deleted_at).map(p=>p.id));
+      dbPlans=dbPlans.filter(p=>!deletedPlans.has(p.id));
+      state.pins.filter(p=>p.deleted_at||deletedPlans.has(p.plan_id)).forEach(p=>deletedPins.add(p.id));
+      deletedComments.push(...state.pin_comments.filter(c=>c.deleted_at));
+      remotePlans=state.plans.filter(p=>!p.deleted_at).map(p=>({...p,created_at:p.created_at||'',updated_at:p.updated_at||'',pins:state.pins.filter(pin=>pin.plan_id===p.id&&!pin.deleted_at).map(pin=>({...pin,created_at:pin.created_at||'',updated_at:pin.updated_at||'',deletion_contested:false,comments:state.pin_comments.filter(c=>c.pin_id===pin.id&&!c.deleted_at).map(c=>({...c,created_at:c.created_at||''})),attachments:[]}))}));
     }
 
-    
     // ==========================================================================
     // Step 1: Upload files to MinIO before syncing metadata
     // ==========================================================================
@@ -414,7 +415,7 @@ class SyncService {
     const pdfProgressEnd = 30;
     const plansWithUrl = dbPlans.filter(p => p.url).length;
     console.log(`[SyncService] Found ${dbPlans.length} plans, ${plansWithUrl} have PDF URLs`);
-    onProgress?.(`Uploading ${plansWithUrl} plan PDFs...`, pdfProgressStart);
+    onProgress?.(recoveryMetadataOnly?'Checking plan PDFs...':`Uploading ${plansWithUrl} plan PDFs...`, pdfProgressStart);
     
     for (let i = 0; i < dbPlans.length; i++) {
       const plan = dbPlans[i];
@@ -426,7 +427,8 @@ class SyncService {
       
       // Existing plan files remain on the server; only new plans need PDF uploads.
       const remotePlan=remotePlans.find(p=>p.id===plan.id);
-      if(recoveryMetadataOnly&&remotePlan?.pdf_url)continue;
+      const fileDecision=recoveryMetadataOnly?await planFileDecision(projectId,plan.id,plan.url,remotePlan?.pdf_url):{skip:false,hash:undefined};
+      if(fileDecision.skip)continue;
       if (plan.url) {
         try {
           onProgress?.(`Uploading PDF: ${plan.name}...`, pdfProgress);
@@ -441,6 +443,7 @@ class SyncService {
           
           if (result.success && result.serverUrl) {
             planPdfUrls.set(plan.id, result.serverUrl);
+            if(recoveryMetadataOnly)await rememberPlanFile(projectId,plan.id,result.serverUrl,fileDecision.hash);
             console.log(`[SyncService] PDF uploaded: ${plan.name} -> ${result.serverUrl}`);
 
             // Generate and upload thumbnail from the PDF
@@ -525,6 +528,7 @@ class SyncService {
       const points = await database.getPointsByPlan(plan.id);
       
       for (const point of points) {
+        if(deletedPins.has(point.id))continue;
         // Convert point to server pin format
         allPins.push({
           id: point.id,
@@ -540,7 +544,9 @@ class SyncService {
 
         // Convert legacy comment to pin_comment
         // Use a UUID for the comment ID instead of concatenating (to stay under 36 char limit)
-        if (point.comment) {
+        const remoteComments=remotePlans.flatMap(p=>p.pins).find(p=>p.id===point.id)?.comments||[];
+        const commentAlreadySaved=recoveryMetadataOnly&&(remoteComments.some(c=>c.comment===point.comment)||remoteComments.map(c=>c.comment).join('\n')===point.comment||deletedComments.some(c=>c.pin_id===point.id&&c.comment===point.comment));
+        if (point.comment&&!commentAlreadySaved) {
           allComments.push({
             // Stable identity makes metadata retries safe after a lost response.
             id: recoveryMetadataOnly
@@ -575,8 +581,6 @@ class SyncService {
               processedImages++;
               
               if (result.success && result.serverUrl) {
-                // Reproduce stored bytes without a database link on the first trial push.
-                if(simulateMissingPhotoLinks&&RECOVERY_TRIAL_GAPS.includes(image.id))continue;
                 allAttachments.push({
                   id: image.id,
                   pin_id: point.id,

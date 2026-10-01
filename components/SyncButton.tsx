@@ -12,7 +12,6 @@ import useSync, { ServerProjectSummary } from '@/hooks/useSync';
 import { PullOptions } from '@/services/SyncService';
 import PhotoRecoveryPrototype from './PhotoRecoveryPrototype';
 import DevicePhotoRecovery,{PhotoRecoveryControl} from './DevicePhotoRecovery';
-import {PHOTO_RECOVERY_TEST_PROJECT} from '@/services/PhotoRecoveryService';
 
 // Pull options for the UI
 type IncludeOption = 'all' | 'plans' | 'plans,pins';
@@ -65,7 +64,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
       console.log('[SyncButton] No projectId, returning');
       return;
     }
-    if(projectId===PHOTO_RECOVERY_TEST_PROJECT&&recovery.current){await recovery.current.push();onSyncComplete?.();return;}
+    if(recovery.current){await recovery.current.push();onSyncComplete?.();return;}
     console.log('[SyncButton] Calling pushProject...');
     await pushProject(projectId);
     console.log('[SyncButton] pushProject completed');
@@ -215,7 +214,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
 
         {/* Sync Buttons */}
           {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1' && <PhotoRecoveryPrototype projectId={projectId} />}
-          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery ref={recovery} projectId={projectId} pushProject={(simulate,metadataOnly)=>pushProject(projectId!,simulate,metadataOnly)} onBusy={setRecoveryBusy} syncProgress={isPushing?{message:progressMessage,percent:progressPercent}:undefined} />}
+          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery ref={recovery} projectId={projectId} pushProject={metadataOnly=>pushProject(projectId!,metadataOnly)} onBusy={setRecoveryBusy} syncProgress={isPushing?{message:progressMessage,percent:progressPercent}:undefined} />}
         <div className="flex flex-wrap gap-2">
           {/* Push Button */}
           {projectId && (

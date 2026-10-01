@@ -1,9 +1,9 @@
 import React,{forwardRef,useEffect,useImperativeHandle,useState} from 'react';
 import {pushWithPhotoRecovery} from '@/services/PhotoRecoveryWorkflow';
-import {PHOTO_RECOVERY_TEST_PROJECT,scanPhotoRecovery,recoverPhotos,RecoveryScan,RecoveryPhoto,PhotoProgress} from '@/services/PhotoRecoveryService';
+import {scanPhotoRecovery,recoverPhotos,RecoveryScan,RecoveryPhoto,PhotoProgress} from '@/services/PhotoRecoveryService';
 
 export type PhotoRecoveryControl={push:()=>Promise<void>};
-type Props={projectId?:string;pushProject:(simulate:boolean,metadataOnly?:boolean)=>Promise<unknown>;onBusy:(busy:boolean)=>void;syncProgress?:{message:string;percent:number}};
+type Props={projectId?:string;pushProject:(metadataOnly:boolean)=>Promise<unknown>;onBusy:(busy:boolean)=>void;syncProgress?:{message:string;percent:number}};
 const DevicePhotoRecovery=forwardRef<PhotoRecoveryControl,Props>(function DevicePhotoRecovery({projectId,pushProject,onBusy,syncProgress},ref) {
   const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[scan,setScan]=useState<RecoveryScan|null>(null),[progress,setProgress]=useState<PhotoProgress|null>(null),[error,setError]=useState('');
   const refresh=async()=>{if(!projectId)return;setBusy(true);setError('');setProgress({message:'Checking photos on server…',completed:0,total:0,percent:0});try{setScan(await scanPhotoRecovery(projectId));setProgress(null);}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
@@ -16,8 +16,8 @@ const DevicePhotoRecovery=forwardRef<PhotoRecoveryControl,Props>(function Device
     catch(e){setError(e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   }}));
-  if(projectId!==PHOTO_RECOVERY_TEST_PROJECT)return null;
-  const retry=async(photos:RecoveryPhoto[])=>{setBusy(true);setError('');try{if(!await pushProject(false,true))throw new Error('Pins and comments did not finish syncing. Retry before uploading photos.');const selected=new Set(photos.map(p=>p.image.id));const current=await scanPhotoRecovery(projectId);const failures=await recoverPhotos(projectId,current.photos.filter(p=>selected.has(p.image.id)),setProgress);setError(failures.map(f=>f.error).join('\n'));setScan(await scanPhotoRecovery(projectId));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+  if(!projectId)return null;
+  const retry=async(photos:RecoveryPhoto[])=>{setBusy(true);setError('');try{if(!await pushProject(true))throw new Error('Pins and comments did not finish syncing. Retry before uploading photos.');const selected=new Set(photos.map(p=>p.image.id));const current=await scanPhotoRecovery(projectId);const failures=await recoverPhotos(projectId,current.photos.filter(p=>selected.has(p.image.id)),setProgress);setError(failures.map(f=>f.error).join('\n'));setScan(await scanPhotoRecovery(projectId));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
   const pending=scan?.photos.filter(p=>p.state!=='confirmed')||[];
   const grouped=pending.reduce<Record<string,RecoveryPhoto[]>>((rows,p)=>{(rows[p.image.point_id]??=[]).push(p);return rows;},{});
   const shownProgress=syncProgress?{message:syncProgress.message,percent:syncProgress.percent,total:0,completed:0,photo:undefined}:progress;
