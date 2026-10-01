@@ -223,7 +223,11 @@ async function main() {
       }
       const paths = [...rows.plans.flatMap(p => [p.url,p.thumbnail]),...rows.images.map(i=>i.url)].filter(Boolean);
       const files = {};
-      for (const path of paths) files[path]=(await plugins.Filesystem.readFile({directory:'DATA',path})).data;
+      for (const path of paths) {
+        if(path.startsWith('data:')){files[path]=path.slice(path.indexOf(',')+1);continue;}
+        try{files[path]=(await plugins.Filesystem.readFile({directory:'DATA',path})).data;}
+        catch(error){throw new Error(`Cannot read fixture asset ${path.slice(0,100)}: ${error.message}`);}
+      }
       const checkpoint = await plugins.Preferences.get({key:'e2e_upgrade_checkpoint'});
       return {rows,files,checkpoint};
     });
