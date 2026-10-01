@@ -57,6 +57,9 @@ env:
   # Known working build from the v20 -> v25 upgrade run. Google's latest
   # emulator package can change or be unavailable independently of app code.
   EMULATOR_BUILD: 15917651
+  # Keep isolated storage tests independent of Play Services configuration
+  # updates, which can restart FontsProvider and kill its app consumers.
+  SYSTEM_IMAGE_TARGET: default
   # A tablet profile: the plan canvas renders at ~1263x893 CSS px and the
   # script double-clicks on the visible part of it. Landscape pixel_c gives
   # 1280x900 CSS px so all three pin positions stay on screen.
@@ -152,7 +155,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ env.API_LEVEL }}-${{ env.AVD_PROFILE }}-v1
+          key: avd-${{ env.API_LEVEL }}-${{ env.AVD_PROFILE }}-${{ env.SYSTEM_IMAGE_TARGET }}-${{ env.EMULATOR_BUILD }}-v2
 
       - name: Create AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -160,7 +163,7 @@ jobs:
         with:
           api-level: ${{ env.API_LEVEL }}
           emulator-build: ${{ env.EMULATOR_BUILD }}
-          target: google_apis
+          target: ${{ env.SYSTEM_IMAGE_TARGET }}
           arch: x86_64
           profile: ${{ env.AVD_PROFILE }}
           force-avd-creation: false
@@ -176,7 +179,7 @@ jobs:
         with:
           api-level: ${{ env.API_LEVEL }}
           emulator-build: ${{ env.EMULATOR_BUILD }}
-          target: google_apis
+          target: ${{ env.SYSTEM_IMAGE_TARGET }}
           arch: x86_64
           profile: ${{ env.AVD_PROFILE }}
           force-avd-creation: false
