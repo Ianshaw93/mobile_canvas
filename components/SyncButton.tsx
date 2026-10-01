@@ -10,6 +10,8 @@
 import React, { useState } from 'react';
 import useSync, { ServerProjectSummary } from '@/hooks/useSync';
 import { PullOptions } from '@/services/SyncService';
+import PhotoRecoveryPrototype from './PhotoRecoveryPrototype';
+import DevicePhotoRecovery from './DevicePhotoRecovery';
 
 // Pull options for the UI
 type IncludeOption = 'all' | 'plans' | 'plans,pins';
@@ -54,6 +56,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
   const [showWarningDetail, setShowWarningDetail] = useState(false);
 
   const handlePush = async () => {
+    if (process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1') return;
     console.log('[SyncButton] handlePush called, projectId:', projectId);
     if (!projectId) {
       console.log('[SyncButton] No projectId, returning');
@@ -66,6 +69,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
   };
 
   const handleOpenPullModal = async () => {
+    if (process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1') return;
     setShowModal(true);
     setIsLoadingProjects(true);
     setSelectedProject(null);
@@ -206,12 +210,14 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
         )}
 
         {/* Sync Buttons */}
+          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1' && <PhotoRecoveryPrototype projectId={projectId} />}
+          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery projectId={projectId} />}
         <div className="flex gap-2">
           {/* Push Button */}
           {projectId && (
             <button
               onClick={handlePush}
-              disabled={isSyncing}
+              disabled={isSyncing || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
                 isSyncing
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -237,7 +243,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
           {/* Pull Button */}
           <button
             onClick={handleOpenPullModal}
-            disabled={isSyncing}
+            disabled={isSyncing || process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1'}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
               isSyncing
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'

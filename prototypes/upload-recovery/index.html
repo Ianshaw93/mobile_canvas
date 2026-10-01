@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SiteRight · Photo recovery</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body>
+<header><div class="brand"><span class="brandmark">S</span>SiteRight <span class="muted">/ Photo recovery</span></div><span class="sandbox">LOCAL COPY · LIVE DATA IS SAFE</span></header>
+<main>
+<div class="breadcrumb">Projects / Millstone Court / Upload status</div>
+<div class="title"><div><p class="eyebrow">CONTINUE WHERE YOU LEFT OFF</p><h1>Every photo accounted for.</h1><p id="project"></p></div><button id="retry-all" class="primary">Retry remaining photos</button></div>
+<div class="notice">Real project data captured on <strong>30 September 2026</strong>. This replays the historical upload gap in a local copy; it does not show current live status.</div>
+<section id="summary" class="summary"></section>
+<div class="workarea"><aside><h3>Plans</h3><div id="plans"></div><div class="legend"><strong>What we count</strong><p>Each photo has its own status. A pin can have confirmed photos and still have others waiting.</p><p>“No photos” means check the pin; it does not prove an upload failed.</p></div></aside>
+<section class="content"><div class="toolbar"><h2 id="section-title">Photos to finish</h2><select id="filter"><option value="remaining">Needs attention</option><option value="all">All pins & photos</option><option value="empty">Pins with no photos</option></select></div><input id="search" class="search" placeholder="Search plan, pin number or comment" aria-label="Search pins"><div id="pins"></div></section></div>
+<details class="lab" open><summary>Recovery controls · local prototype</summary><div class="controls"><label><input type="checkbox" id="online" checked> Connection available</label><label><input type="checkbox" id="auto"> Automatically retry while server runs</label><button id="reset">Replay original gap</button><a href="/api/export" target="_blank">Inspect saved state ↗</a></div><p>Try a failure on an individual image, retry it, then retry again. Reload the page to check persistence. The event history shows whether bytes were sent or an existing file was linked.</p><div id="events"></div></details>
+</main>
+<dialog id="photo-dialog"><form method="dialog"><button class="close" aria-label="Close">×</button></form><h2 id="dialog-title">Choose photo</h2><p id="dialog-description"></p><input id="file" type="file" accept="image/jpeg,image/png,image/webp"><img id="preview" alt="Selected photo preview" hidden><button id="queue-photo" class="primary" disabled>Queue this photo</button><p class="muted">Saved and uploaded only to this local copy.</p></dialog>
+<div id="toast" role="status" hidden></div>
+</body></html>
