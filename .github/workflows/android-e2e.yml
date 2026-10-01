@@ -180,6 +180,7 @@ jobs:
           script: |
             adb devices
             node tests/e2e/android.js
+            E2E_RECOVERY_OFFLINE=1 E2E_OUT=e2e-out/recovery node tests/e2e/live-recovery.js
 
       - name: Upload screenshots and logcat
         if: always()
