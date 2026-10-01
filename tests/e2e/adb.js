@@ -15,7 +15,7 @@ function adb(args, opts = {}) {
 
 function adbQuiet(args) {
   const full = SERIAL ? ['-s', SERIAL, ...args] : args;
-  return spawnSync('adb', full, { encoding: 'utf8' });
+  return spawnSync('adb', full, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 }
 
 /**

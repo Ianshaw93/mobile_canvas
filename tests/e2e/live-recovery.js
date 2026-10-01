@@ -25,10 +25,10 @@ function check(name,condition){if(offline)name=name.replace('live test','fixture
 async function read(id){if(fixture)return fixture.read(id);const r=await fetch(`${API}/api/mobile/sync/projects/${id}`);if(!r.ok)throw new Error(`Read failed ${r.status}`);return r.json();}
 function ownedPin(project){return project.plans.flatMap(p=>p.pins).find(p=>p.id===pinId);}
 async function connect(){
-  await launchAndForward(PKG,'.MainActivity',PORT);
+  const {sock}=await launchAndForward(PKG,'.MainActivity',PORT);
   try {
     if(!device){device=(await _android.devices()).find(d=>d.serial()===(process.env.ANDROID_SERIAL||'emulator-5554'));if(!device)throw new Error('No test emulator');device.setDefaultTimeout(60000);}
-    page=await (await device.webView({pkg:PKG},{timeout:60000})).page();
+    page=await (await device.webView({socketName:sock},{timeout:60000})).page();
     conn={close:async()=>{try{await page.context().close();}catch{}}};
   } catch(error) {
     console.log('Android WebView connection fallback:',String(error).split('\n')[0]);

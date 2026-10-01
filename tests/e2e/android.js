@@ -51,13 +51,14 @@ let device = null; // Playwright AndroidDevice, reused across relaunches
 // Preferred: Playwright's Android support talks to the WebView's abstract
 // socket through adb itself and is the path Playwright tests against WebView.
 async function connectViaPlaywrightAndroid() {
+  const {sock}=await launchAndForward(PKG,ACTIVITY,PORT);
   if (!device) {
     const devices = await _android.devices();
     device = devices.find(d => !process.env.ANDROID_SERIAL || d.serial() === process.env.ANDROID_SERIAL);
     if (!device) throw new Error(`no Android device found (have: ${devices.map(d => d.serial()).join(', ') || 'none'})`);
     device.setDefaultTimeout(60000);
   }
-  const webview = await device.webView({ pkg: PKG }, { timeout: 60000 });
+  const webview = await device.webView({ socketName: sock }, { timeout: 60000 });
   const page = await webview.page();
   return { page, close: async () => { try { await page.context().close(); } catch {} } };
 }
