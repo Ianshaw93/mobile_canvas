@@ -2,8 +2,8 @@ jest.mock('../database',()=>({database:{getProject:jest.fn(),getPlansByProject:j
 jest.mock('../fileStorage',()=>({fileStorageService:{}}));
 jest.mock('@capacitor/core',()=>({...jest.requireActual('@capacitor/core'),Capacitor:{getPlatform:()=> 'android'}}));
 jest.mock('@capacitor/preferences',()=>({Preferences:{get:jest.fn().mockResolvedValue({value:null}),set:jest.fn()}}));
-const mockImageUpload=jest.fn();
-jest.mock('../FileUploadService',()=>({FileUploadService:jest.fn().mockImplementation(()=>({uploadAttachmentImage:mockImageUpload}))}));
+const mockImageUpload=jest.fn(),mockPdfUpload=jest.fn();
+jest.mock('../FileUploadService',()=>({FileUploadService:jest.fn().mockImplementation(()=>({uploadAttachmentImage:mockImageUpload,uploadPlanPdf:mockPdfUpload}))}));
 import {database} from '../database';
 import {syncService} from '../SyncService';
 import {RECOVERY_TRIAL_PROJECT,RECOVERY_TRIAL_NAME,RECOVERY_TRIAL_GAPS} from '../PhotoRecoveryTrial';
@@ -55,6 +55,21 @@ describe('full push with controlled missing photo links',()=>{
     global.fetch=jest.fn().mockResolvedValue(new Response(JSON.stringify({id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[]})));
     await expect(syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true)).rejects.toThrow('no uploaded PDF');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('uploads the PDF for a new floor before saving its pins without uploading photos',async()=>{
+    jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'new-plan',project_id:RECOVERY_TRIAL_PROJECT,name:'New floor',url:'local.pdf',thumbnail:'',width:1,height:1,display_scale:1.5,display_order:0,created_at:'now',updated_at:'now'}]);
+    mockPdfUpload.mockResolvedValue({success:true,serverUrl:'new-floor.pdf'});
+    global.fetch=jest.fn(async(url)=>new Response(JSON.stringify(String(url).includes('/sync/projects/')?{id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[]}:{status:'success',server_timestamp:'now'})));
+    await syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true);
+    const request=JSON.parse(String(jest.mocked(fetch).mock.calls[1][1]?.body));
+    expect(mockPdfUpload).toHaveBeenCalledTimes(1);expect(request.plans[0].pdf_url).toBe('new-floor.pdf');expect(mockImageUpload).not.toHaveBeenCalled();
+  });
+  it('does not send metadata if uploading a new floor PDF fails',async()=>{
+    jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'new-plan',project_id:RECOVERY_TRIAL_PROJECT,name:'New floor',url:'local.pdf',thumbnail:'',width:1,height:1,display_scale:1.5,display_order:0,created_at:'now',updated_at:'now'}]);
+    mockPdfUpload.mockResolvedValue({success:false,error:'Disconnected'});
+    global.fetch=jest.fn().mockResolvedValue(new Response(JSON.stringify({id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[]})));
+    await expect(syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true)).rejects.toThrow('Could not upload new plan');
+    expect(fetch).toHaveBeenCalledTimes(1);expect(mockImageUpload).not.toHaveBeenCalled();
   });
   it('stops metadata recovery when it cannot inspect the server plans',async()=>{
     global.fetch=jest.fn().mockResolvedValue(new Response('offline',{status:503}));
