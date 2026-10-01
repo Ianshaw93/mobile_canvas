@@ -97,6 +97,10 @@ async function connect() {
     console.log('  connected via CDP');
   }
   const { page } = conn;
+  // Storage/upgrade checks must not depend on GitHub's public API availability.
+  // UpdateService has a separate unit suite; no release is offered in this fixture.
+  await page.route('https://api.github.com/repos/Ianshaw93/fd-mobile-releases/releases?per_page=30',route=>route.fulfill({status:200,contentType:'application/json',body:'[]'}));
+  await page.reload({waitUntil:'domcontentloaded'});
   page.on('console', m => {
     if (m.type() !== 'error') return;
     const url = (m.location() && m.location().url) || '';

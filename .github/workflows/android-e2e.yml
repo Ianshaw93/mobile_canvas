@@ -142,6 +142,9 @@ jobs:
 
       - name: Run Android e2e
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          E2E_APK: ${{ inputs.test_upgrade && format('{0}/upgrade/old.apk', runner.temp) || '' }}
+          E2E_UPGRADE_APK: ${{ inputs.test_upgrade && format('{0}/upgrade/new.apk', runner.temp) || '' }}
         with:
           api-level: ${{ env.API_LEVEL }}
           target: google_apis
@@ -152,11 +155,7 @@ jobs:
           disable-animations: true
           script: |
             adb devices
-            if [ -f "$RUNNER_TEMP/upgrade/old.apk" ]; then
-              E2E_APK="$RUNNER_TEMP/upgrade/old.apk" E2E_UPGRADE_APK="$RUNNER_TEMP/upgrade/new.apk" node tests/e2e/android.js
-            else
-              node tests/e2e/android.js
-            fi
+            node tests/e2e/android.js
 
       - name: Upload screenshots and logcat
         if: always()
