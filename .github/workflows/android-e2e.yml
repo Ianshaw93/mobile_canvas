@@ -54,6 +54,9 @@ on:
 
 env:
   API_LEVEL: 34
+  # Known working build from the v20 -> v25 upgrade run. Google's latest
+  # emulator package can change or be unavailable independently of app code.
+  EMULATOR_BUILD: 15917651
   # A tablet profile: the plan canvas renders at ~1263x893 CSS px and the
   # script double-clicks on the visible part of it. Landscape pixel_c gives
   # 1280x900 CSS px so all three pin positions stay on screen.
@@ -156,6 +159,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
+          emulator-build: ${{ env.EMULATOR_BUILD }}
           target: google_apis
           arch: x86_64
           profile: ${{ env.AVD_PROFILE }}
@@ -171,6 +175,7 @@ jobs:
           E2E_UPGRADE_APK: ${{ inputs.test_upgrade && format('{0}/upgrade/new.apk', runner.temp) || '' }}
         with:
           api-level: ${{ env.API_LEVEL }}
+          emulator-build: ${{ env.EMULATOR_BUILD }}
           target: google_apis
           arch: x86_64
           profile: ${{ env.AVD_PROFILE }}
