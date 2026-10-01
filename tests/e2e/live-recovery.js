@@ -87,6 +87,7 @@ async function connect(){
   });
   await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>document.body.innerText.includes('Add Project'),null,{timeout:60000});
+  await page.waitForFunction(async()=>{try{await window.Capacitor.Plugins.CapacitorSQLite.query({database:'mobile_canvas_db',statement:'SELECT 1',values:[],readonly:false});return true;}catch{return false;}},null,{timeout:60000});
 }
 async function push(){
   await page.getByRole('button',{name:'Push to Server',exact:true}).click();
