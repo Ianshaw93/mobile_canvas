@@ -14,6 +14,11 @@ name: Android E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      test_upgrade:
+        description: "Test v20 to candidate upgrade with native fixture data retained"
+        type: boolean
+        default: false
   workflow_call:
   push:
     branches: [cloud, main]
@@ -56,6 +61,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Enable KVM for the emulator
         run: |
@@ -96,6 +103,21 @@ jobs:
           cd android
           ./gradlew assembleDebug
 
+      - name: Build v20 upgrade baseline
+        if: inputs.test_upgrade == true
+        run: |
+          mkdir -p "$RUNNER_TEMP/upgrade"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/upgrade/new.apk"
+          git worktree add --detach "$RUNNER_TEMP/upgrade/baseline" 35366e9
+          cd "$RUNNER_TEMP/upgrade/baseline"
+          npm ci
+          npm run static
+          npx cap sync android
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/upgrade/old.apk"
+
       - name: Cache AVD
         uses: actions/cache@v4
         id: avd-cache
@@ -130,7 +152,11 @@ jobs:
           disable-animations: true
           script: |
             adb devices
-            node tests/e2e/android.js
+            if [ -f "$RUNNER_TEMP/upgrade/old.apk" ]; then
+              E2E_APK="$RUNNER_TEMP/upgrade/old.apk" E2E_UPGRADE_APK="$RUNNER_TEMP/upgrade/new.apk" node tests/e2e/android.js
+            else
+              node tests/e2e/android.js
+            fi
 
       - name: Upload screenshots and logcat
         if: always()

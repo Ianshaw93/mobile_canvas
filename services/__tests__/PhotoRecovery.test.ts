@@ -13,18 +13,19 @@ describe('device photo recovery',()=>{
   const projectId=PHOTO_RECOVERY_TEST_PROJECT;
   const image={id:'photo',point_id:'pin',url:'data:image/jpeg;base64,aGVsbG8=',created_at:'2026-10-01T00:00:00Z',updated_at:'2026-10-01T00:00:00Z'};
   const photo:RecoveryPhoto={image,plan:'GF',pin:1,state:'pending'};
-  let saved:string|null,stored:boolean,linked:boolean,pushes:number,wrongIdentity:boolean,loseLink:boolean;
+  let saved:string|null,stored:boolean,linked:boolean,pushes:number,wrongIdentity:boolean,loseLink:boolean,online:boolean,pinAvailable:boolean,pinDeleted:boolean,corrupt:boolean;
   beforeEach(()=>{
-    jest.clearAllMocks();saved=null;stored=false;linked=false;pushes=0;wrongIdentity=false;loseLink=false;
+    jest.clearAllMocks();saved=null;stored=false;linked=false;pushes=0;wrongIdentity=false;loseLink=false;online=true;pinAvailable=true;pinDeleted=false;corrupt=false;
     Object.defineProperty(globalThis,'crypto',{value:webcrypto,configurable:true});
     jest.mocked(Preferences.get).mockImplementation(async()=>({value:saved}));
     jest.mocked(Preferences.set).mockImplementation(async options=>{saved=options.value;});
     mockSign.mockResolvedValue({file_key:`projects/${projectId}/photo.jpg`,upload_url:'https://test.invalid/put',expires_in_seconds:900});
     mockUpload.mockImplementation(async()=>{stored=true;});
     global.fetch=jest.fn(async(url,options)=>{
-      if(String(url).includes('/sync/projects/'))return new Response(JSON.stringify({id:wrongIdentity?'wrong':projectId,name:'TEST SYNC 181 IMAGES - 0706 - Millstone Court PAS9980',plans:[{name:'GF',pins:[{id:'pin',attachments:linked?[{id:'photo',url:`projects/${projectId}/photo.jpg`}]:[]}]}]}));
+      if(!online)throw new Error('Network disconnected');
+      if(String(url).includes('/sync/projects/'))return new Response(JSON.stringify({id:wrongIdentity?'wrong':projectId,name:'TEST SYNC 181 IMAGES - 0706 - Millstone Court PAS9980',plans:[{name:'GF',pins:pinAvailable?[{id:'pin',deleted_at:pinDeleted?'now':undefined,attachments:linked?[{id:'photo',url:`projects/${projectId}/photo.jpg`}]:[]}]:[]}]}));
       if(String(url).includes('presign-download'))return new Response(JSON.stringify({download_url:'https://test.invalid/read'}),{status:stored?200:404});
-      if(String(url)==='https://test.invalid/read')return new Response('hello');
+      if(String(url)==='https://test.invalid/read')return new Response(corrupt?'changed':'hello');
       if(String(url).includes('/sync/push')) {
         const body=JSON.parse(String(options?.body));
         expect(body.projects).toEqual([]);expect(body.plans).toEqual([]);expect(body.pins).toEqual([]);expect(body.pin_comments).toEqual([]);
@@ -64,6 +65,36 @@ describe('device photo recovery',()=>{
     expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);
     expect(mockUpload).not.toHaveBeenCalled();expect(pushes).toBe(0);
   });
+
+  it('retains a checkpoint through a disconnected upload and retries after reconnecting',async()=>{
+    mockUpload.mockImplementationOnce(async()=>{online=false;throw new Error('Network disconnected during upload');});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);
+    expect(saved).not.toBeNull();expect(linked).toBe(false);
+    online=true;
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toEqual([]);
+    expect(mockUpload).toHaveBeenCalledTimes(2);expect(mockSign).toHaveBeenCalledTimes(1);expect(pushes).toBe(1);
+  });
+  it('renews an expired upload URL only when the previous storage object is absent',async()=>{
+    saved=JSON.stringify({key:`projects/${projectId}/photo.jpg`,uploadUrl:'expired',hash:'2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',expiresAt:1});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toEqual([]);
+    expect(mockSign).toHaveBeenCalledTimes(1);expect(pushes).toBe(1);
+  });
+  it('refuses a database link when stored bytes differ from the original',async()=>{
+    corrupt=true;
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);expect(pushes).toBe(0);
+  });
+  it('does not upload to a pin removed from the server',async()=>{
+    pinAvailable=false;
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);expect(mockUpload).not.toHaveBeenCalled();expect(pushes).toBe(0);
+  });
+  it('does not link a photo if its pin is deleted during the upload',async()=>{
+    mockUpload.mockImplementationOnce(async()=>{stored=true;pinDeleted=true;});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);expect(pushes).toBe(0);
+  });
+  it('reports a missing local original without attempting an upload',async()=>{
+    const missing={...photo,image:{...image,url:'https://server/photo.jpg'}};
+    expect(await recoverPhotos(projectId,[missing],jest.fn())).toHaveLength(1);expect(mockUpload).not.toHaveBeenCalled();expect(pushes).toBe(0);
+  });
   it('counts missing photos on a pin that already has a confirmed photo',async()=>{
     linked=true;
     jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'plan',project_id:projectId,name:'GF',url:'pdf',thumbnail:'',width:1,height:1,display_scale:1.5,display_order:0,created_at:'now',updated_at:'now'}]);
@@ -71,5 +102,17 @@ describe('device photo recovery',()=>{
     jest.mocked(database.getImagesByPoint).mockResolvedValue([image,{...image,id:'missing-photo'}]);
     const scan=await scanPhotoRecovery(projectId);
     expect(scan.confirmed).toBe(1);expect(scan.pending).toBe(1);expect(scan.emptyPins).toEqual([]);
+  });
+  it('resumes using persisted Preferences after the recovery module is restarted',async()=>{
+    mockUpload.mockImplementationOnce(async()=>{stored=true;throw new Error('Connection lost after storing bytes');});
+    expect(await recoverPhotos(projectId,[photo],jest.fn())).toHaveLength(1);
+    const persisted=saved;
+    jest.resetModules();
+    const freshPreferences=(await import('@capacitor/preferences')).Preferences;
+    jest.mocked(freshPreferences.get).mockResolvedValue({value:persisted});
+    jest.mocked(freshPreferences.set).mockResolvedValue(undefined);
+    const restarted=await import('../PhotoRecoveryService');
+    expect(await restarted.recoverPhotos(projectId,[photo],jest.fn())).toEqual([]);
+    expect(mockUpload).toHaveBeenCalledTimes(1);expect(pushes).toBe(1);
   });
 });

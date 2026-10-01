@@ -112,6 +112,10 @@ async function connect() {
 }
 
 async function main() {
+  // This harness clears its fixture database; never allow it on a real user's phone.
+  if (adb(['shell', 'getprop', 'ro.kernel.qemu']).trim() !== '1') {
+    throw new Error('This destructive fixture harness runs on an Android emulator only.');
+  }
   fs.mkdirSync(OUT, { recursive: true });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-android-'));
   const fx = writeFixtures(tmp);
@@ -204,6 +208,42 @@ async function main() {
   check('pins survive relaunch (native SQLite + Filesystem)',
     JSON.stringify(after) === JSON.stringify(before), `after: ${JSON.stringify(after)}`);
   check('plan thumbnail reloads from native storage', await thumbLoaded());
+
+  if (process.env.E2E_UPGRADE_APK) {
+    console.log('\n== preserve native data through an APK upgrade ==');
+    const snapshot = () => page.evaluate(async () => {
+      const plugins = window.Capacitor.Plugins;
+      const rows = {};
+      for (const table of ['projects', 'plans', 'points', 'images']) {
+        rows[table] = (await plugins.CapacitorSQLite.query({database:'mobile_canvas_db',statement:`SELECT * FROM ${table} ORDER BY id`,values:[],readonly:false})).values;
+      }
+      const paths = [...rows.plans.flatMap(p => [p.url,p.thumbnail]),...rows.images.map(i=>i.url)].filter(Boolean);
+      const files = {};
+      for (const path of paths) files[path]=(await plugins.Filesystem.readFile({directory:'DATA',path})).data;
+      const checkpoint = await plugins.Preferences.get({key:'e2e_upgrade_checkpoint'});
+      return {rows,files,checkpoint};
+    });
+    // Seed a photo, comment and Preferences checkpoint in the disposable emulator fixture.
+    await page.evaluate(async () => {
+      const plugins=window.Capacitor.Plugins;
+      const pin=(await plugins.CapacitorSQLite.query({database:'mobile_canvas_db',statement:'SELECT id FROM points ORDER BY id LIMIT 1',values:[],readonly:false})).values[0];
+      await plugins.CapacitorSQLite.run({database:'mobile_canvas_db',statement:'UPDATE points SET comment=? WHERE id=?',values:['Upgrade persistence test comment',pin.id],readonly:false});
+      await plugins.Filesystem.writeFile({directory:'DATA',path:'images/e2e-upgrade.png',recursive:true,data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII='});
+      await plugins.CapacitorSQLite.run({database:'mobile_canvas_db',statement:'INSERT INTO images(id,point_id,url,comment,created_at,updated_at) VALUES(?,?,?,?,?,?)',values:['e2e-upgrade-photo',pin.id,'images/e2e-upgrade.png','Upgrade persistence test photo','2026-10-01','2026-10-01'],readonly:false});
+      await plugins.Preferences.set({key:'e2e_upgrade_checkpoint',value:JSON.stringify({hash:'fixture',uploaded:true,key:'fixture/photo.png'})});
+    });
+    const oldData=await snapshot();
+    await browser.close().catch(()=>{});
+    console.log(adb(['install','-r',process.env.E2E_UPGRADE_APK]).trim());
+    ({browser,page,snap}=await connect());
+    await home({expectPlan:true});
+    const newData=await snapshot();
+    check('upgrade preserves every project, plan, pin, comment and photo record',JSON.stringify(oldData.rows)===JSON.stringify(newData.rows));
+    check('upgrade preserves PDF, thumbnail and original photo bytes',JSON.stringify(oldData.files)===JSON.stringify(newData.files));
+    check('upgrade preserves Preferences checkpoints',JSON.stringify(oldData.checkpoint)===JSON.stringify(newData.checkpoint));
+    check('upgrade preserves rendered pin positions',JSON.stringify(await pins())===JSON.stringify(before));
+    await snap('after-upgrade');
+  }
 
   const unexpected = errs.filter(e => !e.includes('database not opened'));
   check('no unexpected console errors', unexpected.length === 0, unexpected.slice(0, 5).join('\n          '));
