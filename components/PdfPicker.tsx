@@ -485,7 +485,7 @@ const PdfPicker = () => {
         <select 
           value={selectedProjectId || ''} 
           onChange={(e) => setSelectedProjectId(e.target.value || null)}
-          className="mr-2 p-2 border rounded text-black"
+          className="block w-full min-w-0 max-w-full p-2 border rounded text-black"
           aria-label="Select Project"
         >
           <option value="">Select a Project</option>
@@ -496,13 +496,13 @@ const PdfPicker = () => {
           ))}
         </select>
 
-        <div className="inline-flex">
+        <div className="mt-2 flex w-full min-w-0 flex-wrap gap-2">
           <input
             type="text"
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="New Project Name"
-            className="p-2 border rounded mr-2 text-black"
+            className="min-w-0 flex-1 p-2 border rounded text-black"
             aria-label="New Project Name"
           />
           <button
@@ -536,7 +536,7 @@ const PdfPicker = () => {
               value={newClientName}
               onChange={(e) => setNewClientName(e.target.value)}
               onBlur={() => updateProject(selectedProject.id, { clientName: newClientName.trim() })}
-              className="p-2 border rounded text-black w-60"
+              className="p-2 border rounded text-black w-60 max-w-full"
               aria-label="Client Name (selected project)"
             />
 
@@ -545,7 +545,7 @@ const PdfPicker = () => {
               type="text"
               value={selectedProject.name}
               onChange={(e) => updateProject(selectedProject.id, { name: e.target.value })}
-              className="p-2 border rounded text-black w-60"
+              className="p-2 border rounded text-black w-60 max-w-full"
               aria-label="Project Name (selected project)"
             />
 
@@ -598,7 +598,7 @@ const PdfPicker = () => {
                 setNewEngineerName(e.target.value);
                 updateProject(selectedProject.id, { engineerName: e.target.value });
               }}
-              className="p-2 border rounded text-black w-60"
+              className="p-2 border rounded text-black w-60 max-w-full"
               aria-label="Engineer Name (selected project)"
             >
               <option value="">Select engineer</option>
