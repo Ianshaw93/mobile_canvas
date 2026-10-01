@@ -15,7 +15,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { fileStorageService } from './fileStorage';
 import { database, DBProject, DBPlan, DBPoint, DBImage } from './database';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { FileUploadService, UploadResult } from './FileUploadService';
 import {RECOVERY_TRIAL_PROJECT,RECOVERY_TRIAL_NAME,RECOVERY_TRIAL_GAPS} from './PhotoRecoveryTrial';
 
@@ -365,7 +365,8 @@ class SyncService {
   async pushProject(
     projectId: string,
     onProgress?: (message: string, percent: number) => void,
-    simulateMissingPhotoLinks=false
+    simulateMissingPhotoLinks=false,
+    recoveryMetadataOnly=false
   ): Promise<SyncPushResponse> {
     const device = await this.initializeDevice();
 
@@ -386,6 +387,17 @@ class SyncService {
 
     if(simulateMissingPhotoLinks&&(projectId!==RECOVERY_TRIAL_PROJECT||dbProject.name!==RECOVERY_TRIAL_NAME))throw new Error('Partial upload simulation is restricted to TEST SYNC.');
     const dbPlans = await database.getPlansByProject(projectId);
+    let remotePlans: ServerFullProject['plans'] = [];
+    if (recoveryMetadataOnly) {
+      if(projectId!==RECOVERY_TRIAL_PROJECT||dbProject.name!==RECOVERY_TRIAL_NAME)throw new Error('Recovery metadata sync is restricted to TEST SYNC.');
+      onProgress?.('Checking existing plans before saving pins and comments...', 3);
+      const response=await fetch(`${API_BASE_URL}/api/mobile/sync/projects/${projectId}`);
+      if(!response.ok)throw new Error('Could not check existing plans. Your local work is retained.');
+      const remote:ServerFullProject=await response.json();
+      if(remote.id!==projectId||remote.name!==RECOVERY_TRIAL_NAME)throw new Error('Server project identity does not match TEST SYNC.');
+      remotePlans=remote.plans;
+    }
+
     
     // ==========================================================================
     // Step 1: Upload files to MinIO before syncing metadata
@@ -412,6 +424,9 @@ class SyncService {
       const urlPreview = plan.url ? plan.url.substring(0, 50) + '...' : 'EMPTY/NULL';
       console.log(`[SyncService] Plan "${plan.name}" url: ${urlPreview}`);
       
+      // Existing plan files remain on the server; only new plans need PDF uploads.
+      const remotePlan=remotePlans.find(p=>p.id===plan.id);
+      if(recoveryMetadataOnly&&remotePlan?.pdf_url)continue;
       if (plan.url) {
         try {
           onProgress?.(`Uploading PDF: ${plan.name}...`, pdfProgress);
@@ -471,13 +486,16 @@ class SyncService {
               // Continue without thumbnail - not critical
             }
           } else {
+            if(recoveryMetadataOnly)throw new Error(`Could not upload new plan ${plan.name}: ${result.error}`);
             console.warn(`[SyncService] Failed to upload PDF for plan ${plan.name}: ${result.error}`);
           }
         } catch (error) {
           console.error(`[SyncService] Error uploading PDF for plan ${plan.name}:`, error);
+          if(recoveryMetadataOnly)throw error;
           // Continue with other uploads even if one fails
         }
       }
+      if(recoveryMetadataOnly&&!planPdfUrls.has(plan.id))throw new Error(`Plan ${plan.name} has no uploaded PDF. Save its file before retrying photos.`);
     }
     
     // ==========================================================================
@@ -524,7 +542,10 @@ class SyncService {
         // Use a UUID for the comment ID instead of concatenating (to stay under 36 char limit)
         if (point.comment) {
           allComments.push({
-            id: uuidv4(),
+            // Stable identity makes metadata retries safe after a lost response.
+            id: recoveryMetadataOnly
+              ? (remotePlans.flatMap(p=>p.pins).find(p=>p.id===point.id)?.comments.find(c=>c.comment===point.comment)?.id || uuidv5(point.id, uuidv5.URL))
+              : uuidv4(),
             pin_id: point.id,
             comment: point.comment,
             created_at: point.created_at,
@@ -532,6 +553,7 @@ class SyncService {
           });
         }
         
+        if(recoveryMetadataOnly)continue;
         // Upload images for this point
         const images = await database.getImagesByPoint(point.id);
         for (const image of images) {

@@ -215,7 +215,7 @@ export const SyncButton: React.FC<SyncButtonProps> = ({ projectId, onSyncComplet
 
         {/* Sync Buttons */}
           {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE === '1' && <PhotoRecoveryPrototype projectId={projectId} />}
-          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery ref={recovery} projectId={projectId} pushProject={simulate=>pushProject(projectId!,simulate)} onBusy={setRecoveryBusy} syncProgress={isPushing?{message:progressMessage,percent:progressPercent}:undefined} />}
+          {process.env.NEXT_PUBLIC_UPLOAD_RECOVERY_PROTOTYPE !== '1' && <DevicePhotoRecovery ref={recovery} projectId={projectId} pushProject={(simulate,metadataOnly)=>pushProject(projectId!,simulate,metadataOnly)} onBusy={setRecoveryBusy} syncProgress={isPushing?{message:progressMessage,percent:progressPercent}:undefined} />}
         <div className="flex flex-wrap gap-2">
           {/* Push Button */}
           {projectId && (

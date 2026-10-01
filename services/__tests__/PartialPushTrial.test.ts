@@ -32,6 +32,35 @@ describe('full push with controlled missing photo links',()=>{
     await syncService.pushProject(RECOVERY_TRIAL_PROJECT);
     const request=JSON.parse(String(jest.mocked(fetch).mock.calls[0][1]?.body));expect(request.attachments).toHaveLength(2);
   });
+  it('saves new pins/comments without uploading existing plan files or photos and reuses comment IDs',async()=>{
+    jest.mocked(database.getPlansByProject).mockResolvedValue([{id:'plan',project_id:RECOVERY_TRIAL_PROJECT,name:'GF',url:'local.pdf',thumbnail:'',width:1,height:1,display_scale:1.5,display_order:0,created_at:'now',updated_at:'now'}]);
+    jest.mocked(database.getPointsByPlan).mockResolvedValue([{id:'new-pin',plan_id:'plan',x:1,y:1,status:'Open',comment:'New site observation',created_at:'now',updated_at:'now'}]);
+    global.fetch=jest.fn(async(url)=>new Response(JSON.stringify(String(url).includes('/sync/projects/')?{id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[{id:'plan',pdf_url:'existing.pdf',pins:[]}]}:{status:'success',server_timestamp:'now'})));
+    await syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true);
+    await syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true);
+    const requests=jest.mocked(fetch).mock.calls.filter(([url])=>String(url).includes('/sync/push')).map(([,options])=>JSON.parse(String(options?.body)));
+    expect(requests).toHaveLength(2);expect(mockImageUpload).not.toHaveBeenCalled();
+    expect(requests[0].pins[0].id).toBe('new-pin');expect(requests[0].pin_comments[0].comment).toBe('New site observation');
+    expect(requests[0].pin_comments[0].id).toBe(requests[1].pin_comments[0].id);
+    expect(requests[0].attachments||[]).toEqual([]);expect(requests[0].plans[0].pdf_url).toBeUndefined();
+  });
+  it('preserves the ID of an existing legacy comment when retrying metadata',async()=>{
+    jest.mocked(database.getPointsByPlan).mockResolvedValue([{id:'pin',plan_id:'plan',x:1,y:1,status:'Open',comment:'Existing note',created_at:'now',updated_at:'now'}]);
+    global.fetch=jest.fn(async(url)=>new Response(JSON.stringify(String(url).includes('/sync/projects/')?{id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[{id:'plan',pdf_url:'existing.pdf',pins:[{id:'pin',comments:[{id:'old-comment-id',comment:'Existing note'}]}]}]}:{status:'success',server_timestamp:'now'})));
+    await syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true);
+    const request=JSON.parse(String(jest.mocked(fetch).mock.calls[1][1]?.body));
+    expect(request.pin_comments[0].id).toBe('old-comment-id');
+  });
+  it('stops when a new plan has no local PDF, before creating incomplete metadata',async()=>{
+    global.fetch=jest.fn().mockResolvedValue(new Response(JSON.stringify({id:RECOVERY_TRIAL_PROJECT,name:RECOVERY_TRIAL_NAME,plans:[]})));
+    await expect(syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true)).rejects.toThrow('no uploaded PDF');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('stops metadata recovery when it cannot inspect the server plans',async()=>{
+    global.fetch=jest.fn().mockResolvedValue(new Response('offline',{status:503}));
+    await expect(syncService.pushProject(RECOVERY_TRIAL_PROJECT,undefined,false,true)).rejects.toThrow('Could not check');
+    expect(fetch).toHaveBeenCalledTimes(1);expect(mockImageUpload).not.toHaveBeenCalled();
+  });
   it('rejects a different project identity before files or metadata are sent',async()=>{
     jest.mocked(database.getProject).mockResolvedValue({id:'original',name:'Millstone Court',created_at:'now',updated_at:'now'});
     await expect(syncService.pushProject('original',undefined,true)).rejects.toThrow('TEST SYNC');
