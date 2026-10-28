@@ -1,9 +1,15 @@
 export function requireProjectId(projectId: string | null): string {
-  return projectId ?? 'missing-project';
+  if (projectId === null || projectId === '') {
+    throw new Error('No project selected. Select a project before taking a photo.');
+  }
+  return projectId;
 }
 
 export function requireConvertedPhotoData(
   base64Data: string | null | undefined
 ): string {
-  return base64Data ?? 'missing-photo';
+  if (base64Data == null || base64Data === '') {
+    throw new Error('Failed to convert photo to base64');
+  }
+  return base64Data;
 }
