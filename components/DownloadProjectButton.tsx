@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import JSZip from 'jszip';
-import useSiteStore from '@/store/useSiteStore';
+import useSiteStore, { Plan } from '@/store/useSiteStore';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
@@ -11,10 +11,10 @@ const DownloadProjectButton = ({ projectId }: { projectId: string }) => {
     state.projects.find(p => p.id === projectId)
   );
 
-  const generateCSV = (plans: any[]) => {
+  const generateCSV = (plans: Plan[]) => {
     const headers = ['Plan Name', 'Point ID', 'X', 'Y', 'Comment', 'Image Count'];
     const rows = plans.flatMap(plan => 
-      plan.points.map(point => [
+      plan.points.map((point) => [
         plan.name || 'Unnamed Plan',
         point.id,
         point.x,

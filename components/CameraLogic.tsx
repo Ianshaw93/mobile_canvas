@@ -5,7 +5,10 @@ import { Capacitor } from '@capacitor/core';
 import useSiteStore from '@/store/useSiteStore';
 import { sendData } from './ApiCalls';
 import { send } from 'process';
-import { getFirstPlanIdOrDatetime } from './ReturnProjectId';
+import {
+  requireConvertedPhotoData,
+  requireProjectId,
+} from '@/utils/photoSaveGuard';
 
 const IMAGE_DIR = 'stored-images'; // is this an angular thing?
 type Image = {
@@ -181,7 +184,20 @@ const CameraLogic= ({selectedPoint, planId}) => {
       }
     };
   
+    const showPhotoError = (error: unknown) => {
+      console.error('Error saving photo:', error);
+      window.alert(error instanceof Error ? error.message : 'Failed to save photo');
+    };
+
     const takePicture = async () => {
+      let projectId: string;
+      try {
+        projectId = requireProjectId(selectedProjectId);
+      } catch (error) {
+        showPhotoError(error);
+        return;
+      }
+
       const image = await Camera.getPhoto({
         quality: 100,
         allowEditing: false,
@@ -192,49 +208,43 @@ const CameraLogic= ({selectedPoint, planId}) => {
         height: 4096 // Set a high max height
       });
       console.log("image: ", image);
-      const projectId = getFirstPlanIdOrDatetime();
-      if (!projectId) {
-        console.error('No project ID available');
-        return;
-      }
       if (image) {
-        const base64Data = await convertPhotoToBase64(image);
-        if (!base64Data) {
-          console.error('Failed to convert photo to base64');
-          return;
+        try {
+          const base64Data = requireConvertedPhotoData(await convertPhotoToBase64(image));
+          const fileName = `${new Date().getTime()}.jpeg`;
+          console.log("fileName: ", fileName);
+          // Find the index of the point
+          const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
+          await saveImageToFilesystem(base64Data.split(',')[1], fileName);
+
+          // Transform the Photo object into the Image type
+          const transformedImage: Image = {
+            key: fileName,
+            pointId: selectedPoint.id,
+            url: base64Data,
+            pointIndex: pointIndex,
+            projectId: projectId,
+            planId: planId
+          };
+    
+          // Save the image and update the state
+          setImageArray((prevImages) => [...prevImages, { data: base64Data, key: fileName, pointId: selectedPoint.id, url: base64Data, pointIndex: pointIndex, projectId: projectId, planId: planId }]);
+          await saveImageToLocalStorage(image, projectId, planId);
+    
+          // Add the image to the pin
+          addImageToPin(planId, selectedPoint.id, transformedImage);
+
+          // Update project images
+          updateProjectImages(projectId, transformedImage);
+
+          // Initialize empty comment for the new image
+          setImageComments(prev => ({
+            ...prev,
+            [fileName]: ''
+          }));
+        } catch (error) {
+          showPhotoError(error);
         }
-        const fileName = `${new Date().getTime()}.jpeg`;
-        const filePath = `${Directory.Data}/${fileName}`;
-        console.log("fileName: ", fileName);
-        // Find the index of the point
-        const pointIndex = points.findIndex(p => p.id === selectedPoint.id);
-        await saveImageToFilesystem(base64Data.split(',')[1], fileName);
-
-        // Transform the Photo object into the Image type
-        const transformedImage: Image = {
-          key: fileName,
-          pointId: selectedPoint.id,
-          url: base64Data,
-          pointIndex: pointIndex,
-          projectId: projectId,
-          planId: planId
-        };
-  
-        // Save the image and update the state
-        setImageArray((prevImages) => [...prevImages, { data: base64Data, key: fileName, pointId: selectedPoint.id, url: base64Data, pointIndex: pointIndex, projectId: projectId, planId: planId }]);
-        await saveImageToLocalStorage(image, projectId, planId);
-  
-        // Add the image to the pin
-        addImageToPin(planId, selectedPoint.id, transformedImage);
-
-        // Update project images
-        updateProjectImages(projectId, transformedImage);
-
-        // Initialize empty comment for the new image
-        setImageComments(prev => ({
-          ...prev,
-          [fileName]: ''
-        }));
       }
     };
   
@@ -336,11 +346,9 @@ const CameraLogic= ({selectedPoint, planId}) => {
 
     const handlePhotoTaken = async (photo: Photo) => {
       try {
-        const base64Data = await convertPhotoToBase64(photo);
-        if (!base64Data) {
-          throw new Error('Failed to convert photo to base64');
-        }
-        const fileName = await saveImageToLocalStorage(photo, selectedProjectId, planId);
+        const projectId = requireProjectId(selectedProjectId);
+        const base64Data = requireConvertedPhotoData(await convertPhotoToBase64(photo));
+        const fileName = await saveImageToLocalStorage(photo, projectId, planId);
         
         // Create a copy of the current imageArray
         const updatedImageArray = [...imageArray];
@@ -352,7 +360,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           pointId: selectedPoint.id, 
           url: base64Data, 
           pointIndex: 0, 
-          projectId: selectedProjectId, 
+          projectId: projectId, 
           planId: planId 
         });
         
@@ -368,7 +376,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           pointId: selectedPoint.id,
           url: base64Data,
           pointIndex: 0,
-          projectId: selectedProjectId,
+          projectId: projectId,
           planId: planId
         };
         
@@ -376,7 +384,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
         addImageToPin(planId, selectedPoint.id, transformedImage);
         
         // Update project images
-        updateProjectImages(selectedProjectId, transformedImage);
+        updateProjectImages(projectId, transformedImage);
         
         // Initialize empty comment for the new image
         setImageComments(prev => ({
@@ -384,7 +392,7 @@ const CameraLogic= ({selectedPoint, planId}) => {
           [fileName]: ''
         }));
       } catch (error) {
-        console.error('Error handling photo:', error);
+        showPhotoError(error);
       }
     };
 
