@@ -1,0 +1,40 @@
+---
+description: pstack per-role model choices (overrides skill defaults)
+alwaysApply: true
+---
+# pstack model configuration. One line per role.
+# This project rule overrides skill defaults and any ~/.cursor/rules/pstack-models.mdc.
+# When a vendored skill says to read ~/.cursor/rules/pstack-models.mdc, use these
+# lines instead. They are always in context for cloud agents.
+#
+# 2026-10-28: switch to grok-4.7 (newest Grok) on/after 8 Nov 2026.
+#
+# Hard-coded defaults in vendored skills are NOT active. Do not use them:
+#   grok-4.7-xhigh-fast
+#   claude-opus-5-5-xhigh
+#   claude-opus-*
+# Every role and delegate below is grok-4.6 until 8 Nov 2026.
+#
+# budget: pinned-grok-4.6 (until 8 Nov 2026)
+code: grok-4.6
+judgment: grok-4.6
+prose: grok-4.6
+subagents: grok-4.6
+delegates: grok-4.6
+feature, refactoring: grok-4.6
+bug-fix: grok-4.6
+perf-issue: grok-4.6
+hillclimb: grok-4.6
+judgment and prose: grok-4.6
+hardest tasks: grok-4.6
+how explorer: grok-4.6
+how explainer: grok-4.6
+why investigators: grok-4.6
+why synthesizer: grok-4.6
+reflect tooling: grok-4.6
+reflect judgment, divergent, synthesizer: grok-4.6
+arena runners: grok-4.6
+arena cross-judge pool: grok-4.6
+swarm workers: grok-4.6
+architect runners: grok-4.6
+interrogate reviewers: grok-4.6
