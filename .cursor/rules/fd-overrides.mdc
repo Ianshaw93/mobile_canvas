@@ -1,0 +1,38 @@
+---
+description: Owner overrides to vendored pstack for this repo
+alwaysApply: true
+---
+# FD overrides to pstack (this repo)
+
+These beat the vendored pstack playbooks and principles when they conflict.
+
+## Landing, merge, deploy
+
+- Never auto-merge. Never land overnight. Never deploy.
+- `autopilot-full` is off. The Shipping playbook's landing step is off.
+- Use `autopilot-stack`: build and verify PRs. The human lands them.
+- Do not merge, rebase-to-land, squash-land, enable auto-merge, or ship to production.
+- Do not deploy, promote, or release. Do not buy domains, change paid plans, or spend money.
+
+## Never-block-on-the-human
+
+Ignore **never-block-on-the-human** for merges, deploys, secrets, and paid changes. Stop and wait for the human.
+
+## Bug fixes
+
+- Play the gesture back first. Restate what the human saw, on which surface, before changing code.
+- Reproduce and verify on the matching surface where the human saw it (their tab, device, or prod URL).
+- A pass on another surface (for example headless Playwright) is a proxy, not a pass.
+- After two failed fixes on the same gate, write down and test the premise before a third attempt (attack-the-premise).
+- Never repeat a "hard refresh and try again" handback.
+
+## Quality gates
+
+- Red-green TDD: a failing check first, then the change, then the same check passing.
+- Production typecheck/build gate: `tsc` / `next build` for this TypeScript Next.js app, on the committed head.
+- E2E of post-push integration, not only local unit tests.
+- Before/after evidence (screenshots or equivalent) in the PR.
+
+## PR shape
+
+- One PR per concern. Stack if a later change depends on an earlier one.
